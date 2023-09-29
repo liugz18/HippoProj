@@ -1,4 +1,5 @@
-from transformers import VitMatteImageProcessor, VitMatteForImageMatting
+from transformers import VitMatteImageProcessor
+from model.pt_vitmatte import VitMatteForImageMatting
 import torch
 from PIL import Image
 from huggingface_hub import hf_hub_download
