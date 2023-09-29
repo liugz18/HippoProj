@@ -7,7 +7,7 @@ Set up SSH and read paper about ViTMatte, seems like the model comprises 2 parts
 Set up Cuda, conda, torch, AIT env, read code about huggingface ViTMatte, seems like decoder easier to start with than ViTDet backbone, plan to port decoder first
 
 ## Sep 29
-For decoder, batchNorm and unbiased conv are not available in AIT, seems non-trivial how to circumvent this, plan to port backbone first instead
+For decoder, batchNorm and unbiased conv are not available in AIT, AIT official demo of ResNet-50 is not easy to read, seems non-trivial how to circumvent this, plan to port backbone first instead
 
 Plan to implement modules in a bottom up approach, from easy to hard: VitDetMlp, VitDetLayerNorm, VitDetDropPath, VitDetAttention, VitDetEmbeddings, etc
 
