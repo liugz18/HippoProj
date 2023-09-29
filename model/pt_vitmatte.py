@@ -32,7 +32,7 @@ from transformers.utils import (
 from transformers.utils.backbone_utils import BackboneMixin
 from transformers.models.vitmatte.configuration_vitmatte import VitMatteConfig
 
-
+from .pt_vitdet import VitDetBackbone
 
 VITMATTE_PRETRAINED_MODEL_ARCHIVE_LIST = [
     "hustvl/vitmatte-small-composition-1k",
@@ -268,7 +268,7 @@ class VitMatteForImageMatting(VitMattePreTrainedModel):
 
         print("backbone name", config.backbone_config)
 
-        self.backbone = AutoBackbone.from_config(config.backbone_config)
+        self.backbone = VitDetBackbone(config.backbone_config) #AutoBackbone.from_config(config.backbone_config)
         self.decoder = VitMatteDetailCaptureModule(config)
 
         # Initialize weights and apply final processing
@@ -324,9 +324,11 @@ class VitMatteForImageMatting(VitMattePreTrainedModel):
         )
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
 
-        outputs = self.backbone.forward_with_filtered_kwargs(
-            pixel_values, output_hidden_states=output_hidden_states, output_attentions=output_attentions
-        )
+        # outputs = self.backbone.forward_with_filtered_kwargs(
+        #     pixel_values, output_hidden_states=output_hidden_states, output_attentions=output_attentions
+        # )
+
+        outputs = self.backbone.forward(pixel_values)
 
         features = outputs.feature_maps[-1]
         alphas = self.decoder(features, pixel_values)
