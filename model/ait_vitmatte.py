@@ -30,7 +30,13 @@ from transformers.utils import (
     replace_return_docstrings,
 )
 from transformers.utils.backbone_utils import BackboneMixin
-from transformers.models.vitmatte.configuration_vitmatte import VitMatteConfig
+# from transformers.models.vitmatte.configuration_vitmatte import AITVitMatteConfig
+
+from aitemplate.compiler import compile_model
+from aitemplate.frontend import nn, Tensor
+from aitemplate.testing import detect_target
+from aitemplate.testing.benchmark_pt import benchmark_torch_function
+from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 
 
 
@@ -41,7 +47,7 @@ VITMATTE_PRETRAINED_MODEL_ARCHIVE_LIST = [
 
 
 # General docstring
-_CONFIG_FOR_DOC = "VitMatteConfig"
+# _CONFIG_FOR_DOC = "AITVitMatteConfig"
 
 
 @dataclass
@@ -72,28 +78,28 @@ class ImageMattingOutput(ModelOutput):
     attentions: Optional[Tuple[torch.FloatTensor]] = None
 
 
-class VitMattePreTrainedModel(PreTrainedModel):
-    """
-    An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
-    models.
-    """
+# class AITVitMattePreTrainedModel(PreTrainedModel):
+#     """
+#     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
+#     models.
+#     """
 
-    config_class = VitMatteConfig
-    main_input_name = "pixel_values"
-    supports_gradient_checkpointing = True
+#     config_class = AITVitMatteConfig
+#     main_input_name = "pixel_values"
+#     supports_gradient_checkpointing = True
 
-    def _init_weights(self, module):
-        if isinstance(module, tnn.Conv2d):
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.bias is not None:
-                module.bias.data.zero_()
+#     def _init_weights(self, module):
+#         if isinstance(module, tnn.Conv2d):
+#             module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
+#             if module.bias is not None:
+#                 module.bias.data.zero_()
 
-    def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, BackboneMixin):
-            module.gradient_checkpointing = value
+#     def _set_gradient_checkpointing(self, module, value=False):
+#         if isinstance(module, BackboneMixin):
+#             module.gradient_checkpointing = value
 
 
-class VitMatteBasicConv3x3(tnn.Module):
+class AITVitMatteBasicConv3x3(tnn.Module):
     """
     Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
     """
@@ -119,7 +125,7 @@ class VitMatteBasicConv3x3(tnn.Module):
         return hidden_state
 
 
-class VitMatteConvStream(tnn.Module):
+class AITVitMatteConvStream(tnn.Module):
     """
     Simple ConvStream containing a series of basic conv3x3 layers to extract detail features.
     """
@@ -136,7 +142,7 @@ class VitMatteConvStream(tnn.Module):
         for i in range(len(self.conv_chans) - 1):
             in_chan_ = self.conv_chans[i]
             out_chan_ = self.conv_chans[i + 1]
-            self.convs.append(VitMatteBasicConv3x3(config, in_chan_, out_chan_))
+            self.convs.append(AITVitMatteBasicConv3x3(config, in_chan_, out_chan_))
 
     def forward(self, pixel_values):
         out_dict = {"detailed_feature_map_0": pixel_values}
@@ -149,14 +155,14 @@ class VitMatteConvStream(tnn.Module):
         return out_dict
 
 
-class VitMatteFusionBlock(tnn.Module):
+class AITVitMatteFusionBlock(tnn.Module):
     """
     Simple fusion block to fuse features from ConvStream and Plain Vision Transformer.
     """
 
     def __init__(self, config, in_channels, out_channels):
         super().__init__()
-        self.conv = VitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
+        self.conv = AITVitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
 
     def forward(self, features, detailed_feature_map):
         upscaled_features = tnn.functional.interpolate(features, scale_factor=2, mode="bilinear", align_corners=False)
@@ -166,7 +172,7 @@ class VitMatteFusionBlock(tnn.Module):
         return out
 
 
-class VitMatteHead(tnn.Module):
+class AITVitMatteHead(tnn.Module):
     """
     Simple Matting Head, containing only conv3x3 and conv1x1 layers.
     """
@@ -190,7 +196,7 @@ class VitMatteHead(tnn.Module):
         return hidden_state
 
 
-class VitMatteDetailCaptureModule(tnn.Module):
+class AITVitMatteDetailCaptureModule(tnn.Module):
     """
     Simple and lightweight Detail Capture Module for ViT Matting.
     """
@@ -203,7 +209,7 @@ class VitMatteDetailCaptureModule(tnn.Module):
             )
 
         self.config = config
-        self.convstream = VitMatteConvStream(config)
+        self.convstream = AITVitMatteConvStream(config)
         self.conv_chans = self.convstream.conv_chans
 
         self.fusion_blocks = tnn.ModuleList()
@@ -211,14 +217,14 @@ class VitMatteDetailCaptureModule(tnn.Module):
 
         for i in range(len(self.fusion_channels) - 1):
             self.fusion_blocks.append(
-                VitMatteFusionBlock(
+                AITVitMatteFusionBlock(
                     config=config,
                     in_channels=self.fusion_channels[i] + self.conv_chans[-(i + 1)],
                     out_channels=self.fusion_channels[i + 1],
                 )
             )
 
-        self.matting_head = VitMatteHead(config)
+        self.matting_head = AITVitMatteHead(config)
 
     def forward(self, features, pixel_values):
         detail_features = self.convstream(pixel_values)
@@ -245,7 +251,7 @@ VITMATTE_INPUTS_DOCSTRING = r"""
     Args:
         pixel_values (`torch.FloatTensor` of shape `(batch_size, num_channels, height, width)`):
             Pixel values. Padding will be ignored by default should you provide it. Pixel values can be obtained using
-            [`AutoImageProcessor`]. See [`VitMatteImageProcessor.__call__`] for details.
+            [`AutoImageProcessor`]. See [`AITVitMatteImageProcessor.__call__`] for details.
         output_attentions (`bool`, *optional*):
             Whether or not to return the attentions tensors of all attention layers in case the backbone has them. See
             `attentions` under returned tensors for more detail.
@@ -261,7 +267,7 @@ VITMATTE_INPUTS_DOCSTRING = r"""
     """ViTMatte framework leveraging any vision backbone e.g. for ADE20k, CityScapes.""",
     VITMATTE_START_DOCSTRING,
 )
-class VitMatteForImageMatting(VitMattePreTrainedModel):
+class AITVitMatteForImageMatting(AITVitMattePreTrainedModel):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
@@ -269,7 +275,7 @@ class VitMatteForImageMatting(VitMattePreTrainedModel):
         print("backbone name", config.backbone_config)
 
         self.backbone = AutoBackbone.from_config(config.backbone_config)
-        self.decoder = VitMatteDetailCaptureModule(config)
+        self.decoder = AITVitMatteDetailCaptureModule(config)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -293,13 +299,13 @@ class VitMatteForImageMatting(VitMattePreTrainedModel):
         Examples:
 
         ```python
-        >>> from transformers import VitMatteImageProcessor, VitMatteForImageMatting
+        >>> from transformers import AITVitMatteImageProcessor, AITVitMatteForImageMatting
         >>> import torch
         >>> from PIL import Image
         >>> from huggingface_hub import hf_hub_download
 
-        >>> processor = VitMatteImageProcessor.from_pretrained("hustvl/vitmatte-small-composition-1k")
-        >>> model = VitMatteForImageMatting.from_pretrained("hustvl/vitmatte-small-composition-1k")
+        >>> processor = AITVitMatteImageProcessor.from_pretrained("hustvl/vitmatte-small-composition-1k")
+        >>> model = AITVitMatteForImageMatting.from_pretrained("hustvl/vitmatte-small-composition-1k")
 
         >>> filepath = hf_hub_download(
         ...     repo_id="hf-internal-testing/image-matting-fixtures", filename="image.png", repo_type="dataset"
