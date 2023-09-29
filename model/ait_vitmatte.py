@@ -99,20 +99,19 @@ class ImageMattingOutput(ModelOutput):
 #             module.gradient_checkpointing = value
 
 
-class AITVitMatteBasicConv3x3(tnn.Module):
+class AITVitMatteBasicConv3x3(nn.Module):
     """
     Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
     """
 
     def __init__(self, config, in_channels, out_channels, stride=2, padding=1):
         super().__init__()
-        self.conv = tnn.Conv2d(
+        self.conv = nn.Conv2d(
             in_channels=in_channels,
             out_channels=out_channels,
             kernel_size=3,
             stride=stride,
             padding=padding,
-            bias=False,
         )
         self.batch_norm = tnn.BatchNorm2d(out_channels, eps=config.batch_norm_eps)
         self.relu = tnn.ReLU()
@@ -336,6 +335,15 @@ class AITVitMatteForImageMatting(AITVitMattePreTrainedModel):
 
         features = outputs.feature_maps[-1]
         alphas = self.decoder(features, pixel_values)
+
+        # Save the tensors to files
+        # torch.save(features, 'features.pt')
+        # torch.save(pixel_values, 'pixel_values.pt')
+        # torch.save(alphas, 'alphas.pt')
+
+        # # Load the tensors back from the files
+        # loaded_features = torch.load('features.pt')
+        # loaded_pixel_values = torch.load('pixel_values.pt')
 
         loss = None
         if labels is not None:
