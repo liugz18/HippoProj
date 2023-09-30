@@ -86,7 +86,7 @@ print("Target:", target)
 # ) as module:
 
 module = compile_model(
-    Y, target, "./tmp", "AiTVitDetResBottleneckBlock"
+    Y, target, "./tmp", "AiTVitDetResBottleneckBlock", constants=weights
 ) 
 
 # for name, param in ait_params.items():

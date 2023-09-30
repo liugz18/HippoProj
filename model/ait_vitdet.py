@@ -48,17 +48,7 @@ class AiTVitDetLayerNorm(nn.Module):
         x = x + ops.unsqueeze(0)(ops.unsqueeze(0)(self.bias._tensor))
         return x
 
-class GeluActivation(nn.Module):
 
-    def __init__(self, **kwargs):
-        super().__init__()
-        self.mod = nn.activation.GELU()
-
-    def forward(self, x):
-        # mock_weights = Tensor([x.shape()[-1], x.shape()[-1]], value=1)
-        # x = self.op(x, mock_weights)
-        x = self.mod(x)
-        return x
 
 class AiTVitDetResBottleneckBlock(nn.Module):
     """

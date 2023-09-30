@@ -1,29 +1,38 @@
 import torch
 from transformers.activations import ACT2FN
 from aitemplate.compiler import compile_model
-from aitemplate.frontend import nn, Tensor
+from aitemplate.frontend import nn as ann
+from aitemplate.frontend import Tensor
 from aitemplate.testing import detect_target
 from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 
-from model.ait_vitdet import GeluActivation
 from model.pt_vitdet import *
 
-def mark_output(y):
-    """Different to PyTorch, we need to explicit mark output tensor for optimization,
 
-    Parameters
-    ----------
-    y : List[Tensor]
-        List of output tensors
-    """
-    if type(y) is not tuple:
-        y = (y,)
-    for i in range(len(y)):
-        y[i]._attrs["is_output"] = True
-        y[i]._attrs["name"] = "output_%d" % (i)
-        y_shape = [d._attrs["values"][0] for d in y[i]._attrs["shape"]]
-        print("output_{} shape: {}".format(i, y_shape))
+class GeluActivation(ann.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.mod = ann.activation.GELU()
+
+    def forward(self, x):
+        x = self.mod(x)
+        return x
+
+class PtGeluActivation(torch.nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+
+        self.act1 = ACT2FN[config.hidden_act]
+
+
+    def forward(self, x):
+        out = x
+        out = self.act1(out)
+        return out
+
 
 def map_pt_params(ait_model, pt_model):
     ait_model.name_parameter_tensor()
@@ -41,18 +50,6 @@ class MockConfig:
         self.dropout_prob = 0.1
         self.hidden_act = "gelu"
 
-class PtGeluActivation(torch.nn.Module):
-
-    def __init__(self, config):
-        super().__init__()
-
-        self.act1 = ACT2FN[config.hidden_act]
-
-
-    def forward(self, x):
-        out = x
-        out = self.act1(out)
-        return out
 
 batch_size=1
 hidden=10
@@ -65,7 +62,7 @@ ait_model = GeluActivation()
 ait_model.name_parameter_tensor()
 # create AIT input Tensor
 X = Tensor(
-      shape=shape_pt,
+      shape=shape,
       name="X",
       dtype="float16",
       is_input=True,
@@ -75,7 +72,6 @@ Y = ait_model(X)
 # mark the output tensor
 Y._attrs["is_output"] = True
 Y._attrs["name"] = "Y"
-# mark_output(Y)
 
 
 
@@ -84,7 +80,7 @@ pt_model = PtGeluActivation(mock_config).cuda().half()
 
 # create pt input
 
-x = torch.randn(shape_pt).cuda().half()
+x = torch.randn(shape).cuda().half()
 
 # run pt model
 pt_model.eval()
@@ -109,7 +105,7 @@ module = compile_model(
 # for name, param in ait_params.items():
 #     module.set_constant_with_tensor(name, param)
     # create storage for output tensor
-y = torch.empty(shape_pt).cuda().half()
+y = torch.empty(shape).cuda().half()
 
 # inputs and outputs dict
 inputs = {"X": x}
