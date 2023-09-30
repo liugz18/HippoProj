@@ -2,7 +2,7 @@ import collections.abc
 import math
 from typing import Dict, List, Optional, Tuple, Union
 
-from aitemplate.compiler import compile_model
+from aitemplate.compiler import compile_model, ops
 from aitemplate.frontend import nn, Tensor
 from aitemplate.testing import detect_target
 from aitemplate.testing.benchmark_pt import benchmark_torch_function
@@ -22,3 +22,26 @@ class AiTVitDetMlp(nn.Module):
 
         return x
 
+class AiTVitDetLayerNorm(nn.Module):
+    """
+    A LayerNorm variant, popularized by Transformers, that performs point-wise mean and variance normalization over the
+    channel dimension for inputs that have shape (batch_size, channels, height, width).
+    https://github.com/facebookresearch/ConvNeXt/blob/d1fa8f6fef0a165b27399986cc2bdacc92777e40/models/convnext.py#L119
+    """
+
+    def __init__(self, normalized_shape, eps=1e-6, dtype="float16",):
+        super().__init__()
+        self.weight = nn.Parameter(shape=[normalized_shape], dtype=dtype)
+        self.bias = nn.Parameter(shape=[normalized_shape], dtype=dtype)
+        self.eps = eps
+        self.normalized_shape = (normalized_shape,)
+        self.dtype=dtype
+
+    def forward(self, x):
+        u = ops.reduce_mean(dim=1, keepdim=True)(x)
+        s = ops.vector_norm(dim=1, keepdim=True)(x - u)
+        s = s / math.sqrt(self.normalized_shape[0]) + self.eps
+        x = (x - u) / s
+        # x /= Tensor(shape=x.shape(), value=math.sqrt(self.normalized_shape[0]), dtype=self.dtype)
+        x = ops.unsqueeze(2)(ops.unsqueeze(1)(self.weight._tensor)) * x + ops.unsqueeze(2)(ops.unsqueeze(1)(self.bias._tensor))
+        return x
