@@ -42,6 +42,5 @@ class AiTVitDetLayerNorm(nn.Module):
         s = ops.vector_norm(dim=1, keepdim=True)(x - u)
         s = s / math.sqrt(self.normalized_shape[0]) + self.eps
         x = (x - u) / s
-        # x /= Tensor(shape=x.shape(), value=math.sqrt(self.normalized_shape[0]), dtype=self.dtype)
         x = ops.unsqueeze(2)(ops.unsqueeze(1)(self.weight._tensor)) * x + ops.unsqueeze(2)(ops.unsqueeze(1)(self.bias._tensor))
         return x
