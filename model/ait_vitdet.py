@@ -38,14 +38,14 @@ class AiTVitDetLayerNorm(nn.Module):
         self.dtype=dtype
 
     def forward(self, x):
-        u = ops.reduce_mean(dim=1, keepdim=True)(x)
-        s = ops.vector_norm(dim=1, keepdim=True)(x - u)
+        u = ops.reduce_mean(dim=3, keepdim=True)(x)
+        s = ops.vector_norm(dim=3, keepdim=True)(x - u)
         s = s / math.sqrt(self.normalized_shape[0]) + self.eps
         x = (x - u) / s
-        w = ops.unsqueeze(2)(ops.unsqueeze(1)(self.weight._tensor))
-        print(w.shape())
+        w = ops.unsqueeze(0)(ops.unsqueeze(0)(self.weight._tensor))
+        # print(w.shape())
         x = w * x 
-        x = x + ops.unsqueeze(2)(ops.unsqueeze(1)(self.bias._tensor))
+        x = x + ops.unsqueeze(0)(ops.unsqueeze(0)(self.bias._tensor))
         return x
 
 class GeluActivation(nn.Module):
@@ -100,17 +100,14 @@ class AiTVitDetResBottleneckBlock(nn.Module):
     def forward(self, x):
         out = x
         # print(out.shape)
-        # out = ops.permute021()(ops.permute210()(out)) # permute (0, 1, 2, 3) -> (0, 3, 1, 2)
-        out = ops.permute021()(ops.permute0213()(out))
-        # out = ops.transpose(2, 3)(ops.transpose(1, 3)(out)) # permute (0, 1, 2, 3) -> (0, 3, 1, 2)
+        out = ops.permute021()(ops.permute0213()(out)) # permute (0, 1, 2, 3) -> (0, 3, 1, 2)
         # print(out.shape)
         for layer in self.children():
-            print(layer)
-            print(out.shape)
+            # print(layer)
+            # print(out.shape)
             out = layer(out)
 
+        out = ops.permute0213()(ops.permute021()(out)) # permute (0, 3, 1, 2) -> (0, 1, 2, 3)
         out = x + out
-        # out = ops.permute0213()(ops.permute210()(out)) # permute (0, 3, 1, 2) -> (0, 1, 2, 3) 
-        # out = ops.transpose(2, 3)(ops.transpose(1, 2)(out)) 
-        print(out.shape)
+        # print(out.shape)
         return out
