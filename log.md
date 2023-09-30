@@ -15,3 +15,10 @@ Saved intermediate tensors on disk for modularized porting
 
 Moved pytorch vitdet and vitmatte model to local dir for easy hacking
 
+## Sep 30
+
+Found BatchNorm, GELU Activation in the [source code of AIT](https://github.com/facebookincubator/AITemplate/blob/d5d0acd4fd1aed1c316a5860a2bf6425483df4e1/python/aitemplate/frontend/nn/activation.py)
+
+porting a conv2d fails out of unknown reason ("tmp_key = next(iter(self._attrs["op_instance"].keys()))
+StopIteration" during profiling)
+

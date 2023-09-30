@@ -1,11 +1,12 @@
 import torch
+from transformers.activations import ACT2FN
 from aitemplate.compiler import compile_model
 from aitemplate.frontend import nn, Tensor
 from aitemplate.testing import detect_target
 from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 
-from model.ait_vitdet import AiTVitDetResBottleneckBlock
+from model.ait_vitdet import GeluActivation
 from model.pt_vitdet import *
 
 def mark_output(y):
@@ -40,17 +41,31 @@ class MockConfig:
         self.dropout_prob = 0.1
         self.hidden_act = "gelu"
 
+class PtGeluActivation(torch.nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+
+        self.act1 = ACT2FN[config.hidden_act]
+
+
+    def forward(self, x):
+        out = x
+        out = self.act1(out)
+        return out
+
 batch_size=1
 hidden=10
 # shape = [batch_size, 3, hidden, hidden]
 shape = [batch_size, hidden, hidden, 3]
+shape_pt = [batch_size, 3, hidden, hidden]
 mock_config = MockConfig()
 # create AIT model
-ait_model = AiTVitDetResBottleneckBlock(None, 3, 3, 5)
+ait_model = GeluActivation()
 ait_model.name_parameter_tensor()
 # create AIT input Tensor
 X = Tensor(
-      shape=shape,
+      shape=shape_pt,
       name="X",
       dtype="float16",
       is_input=True,
@@ -58,22 +73,24 @@ X = Tensor(
 # run AIT module to generate output tensor
 Y = ait_model(X)
 # mark the output tensor
-# Y._attrs["is_output"] = True
-# Y._attrs["name"] = "Y"
-mark_output(Y)
+Y._attrs["is_output"] = True
+Y._attrs["name"] = "Y"
+# mark_output(Y)
 
 
 
 # create pt model
-pt_model = VitDetResBottleneckBlock(mock_config, 3, 3, 5).cuda().half()
+pt_model = PtGeluActivation(mock_config).cuda().half()
 
 # create pt input
-shape = [batch_size, 3, hidden, hidden]
-x = torch.randn(shape).cuda().half()
+
+x = torch.randn(shape_pt).cuda().half()
 
 # run pt model
 pt_model.eval()
 y_pt = pt_model(x)
+# y_pt = torch.permute(y_pt, [0,2,3,1])
+# y_pt = y_pt.contiguous()
 
 # map pt weights to ait
 weights = map_pt_params(ait_model, pt_model)
@@ -86,13 +103,13 @@ print("Target:", target)
 # ) as module:
 
 module = compile_model(
-    Y, target, "./tmp", "AiTVitDetResBottleneckBlock"
+    Y, target, "./tmp", "GeluActivation"
 ) 
 
 # for name, param in ait_params.items():
 #     module.set_constant_with_tensor(name, param)
     # create storage for output tensor
-y = torch.empty(shape).cuda().half()
+y = torch.empty(shape_pt).cuda().half()
 
 # inputs and outputs dict
 inputs = {"X": x}

@@ -352,22 +352,25 @@ class VitDetResBottleneckBlock(nn.Module):
         """
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, 1, bias=False)
-        self.norm1 = VitDetLayerNorm(bottleneck_channels)
-        self.act1 = ACT2FN[config.hidden_act]
+        # self.norm1 = VitDetLayerNorm(bottleneck_channels)
+        # self.act1 = ACT2FN[config.hidden_act]
 
-        self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels, 3, padding=1, bias=False)
-        self.norm2 = VitDetLayerNorm(bottleneck_channels)
-        self.act2 = ACT2FN[config.hidden_act]
+        # self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels, 3, padding=1, bias=False)
+        # self.norm2 = VitDetLayerNorm(bottleneck_channels)
+        # self.act2 = ACT2FN[config.hidden_act]
 
-        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, bias=False)
-        self.norm3 = VitDetLayerNorm(out_channels)
+        # self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, bias=False)
+        # self.norm3 = VitDetLayerNorm(out_channels)
 
     def forward(self, x):
         out = x
-        for layer in self.children():
-            out = layer(out)
+        # for layer in self.children():
+        #     out = layer(out)
+        out = self.conv1(out)
+        # out = self.conv2(out)
+        # out = self.conv3(out)
 
-        out = x + out
+        # out = x + out
         return out
 
 
