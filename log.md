@@ -29,3 +29,6 @@ Found BatchNorm, GELU Activation in the [source code of AIT](https://github.com/
 Ported VitMatteBasicConv3x3 and AITVitMatteConvStream, unit test met unexpected input bug
 
 Solved unexpected input bug, need to use nn.identity() to avoid marking input as output, mid layer still have precision issue
+
+## Oct 1
+Successfully ported and benchmarked decoder

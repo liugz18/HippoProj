@@ -319,6 +319,7 @@ class AITVitMatteDetailCaptureModule(nn.Module):
             )
 
         self.matting_head = AITVitMatteHead(config)
+        self.sig = SIGMOID()
 
     def forward(self, features, pixel_values):
         detail_features = self.convstream(pixel_values)
@@ -326,7 +327,7 @@ class AITVitMatteDetailCaptureModule(nn.Module):
             detailed_feature_map_name = len(self.fusion_blocks) - i - 1
             features = self.fusion_blocks[i](features, detail_features[detailed_feature_map_name])
 
-        alphas = SIGMOID(self.matting_head(features))
+        alphas = self.sig(self.matting_head(features))
 
         return alphas
 
