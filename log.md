@@ -27,3 +27,5 @@ Ported AiTVitDetResBottleneckBlock, seems like AIT Conv2d can't compile when in_
 Found BatchNorm, GELU Activation in the [source code of AIT](https://github.com/facebookincubator/AITemplate/blob/d5d0acd4fd1aed1c316a5860a2bf6425483df4e1/python/aitemplate/frontend/nn/activation.py), so plan to work on porting decoder, which may be easier to port
 
 Ported VitMatteBasicConv3x3 and AITVitMatteConvStream, unit test met unexpected input bug
+
+Solved unexpected input bug, need to use nn.identity() to avoid marking input as output, mid layer still have precision issue

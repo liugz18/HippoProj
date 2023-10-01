@@ -6,7 +6,7 @@ from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 from collections import OrderedDict
 
-from model.ait_vitmatte import AITVitMatteConvStream, AITVitMatteConfig
+from model.ait_vitmatte import AITVitMatteBasicConv3x3, AITVitMatteConvStream, AITVitMatteConfig
 from model.pt_vitmatte import *
 
 def mark_output(y):
@@ -69,7 +69,7 @@ def compile(ait_model, shape_pt, weights):
     # mark the output tensor
     outputs = mark_output(Y)
     module = compile_model(
-    Y, target, "./tmp", "AITVitMatteConvStream", constants=weights
+    Y, target, "./tmp", "VitMatteConvStream", constants=weights
 ) 
     # y = torch.empty(shape_after).cuda().half()
 
@@ -82,6 +82,7 @@ shape_pt = [batch_size, 4, 460, 960]
 
 # create AIT model
 ait_model = AITVitMatteConvStream(mock_config)
+
 
 
 # module, outputs = compile(ait_model, shape_pt, weights)
@@ -115,7 +116,7 @@ weights = map_pt_params(ait_model, pt_model)
 # codegen
 target = detect_target()
 module = compile_model(
-Y, target, "./tmp", "AITVitMatteConvStream", constants=weights
+Y, target, "./tmp", "VitMatteConvStream", constants=weights
 ) 
 
 
@@ -126,8 +127,11 @@ inputs = {"X": x}
 module.run_with_tensors(inputs, outputs, graph_mode=True)
 
 # verify output is correct
-print(outputs, y_pt)
-# print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
+print(len(outputs), len(y_pt))
+for y, y_pt_name in zip(outputs, y_pt):
+    print(y_pt_name, y.shape, y_pt[y_pt_name].shape)
+    print((y - y_pt[y_pt_name]).max())
+    print(torch.allclose(y, y_pt[y_pt_name], atol=1e-2, rtol=1e-2))
 
 # benchmark ait and pt
 count = 1000

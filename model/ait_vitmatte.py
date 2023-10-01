@@ -215,19 +215,21 @@ class AITVitMatteConvStream(nn.Module):
         in_channels = config.backbone_config.num_channels
         out_channels = config.convstream_hidden_sizes
 
-        self.convs = nn.ModuleList()
+        self.convs = []#nn.ModuleList()
         self.conv_chans = [in_channels] + out_channels
+
+        # self.convs = (AITVitMatteBasicConv3x3(config, self.conv_chans[0], self.conv_chans[1]),)
 
         for i in range(len(self.conv_chans) - 1):
             in_chan_ = self.conv_chans[i]
             out_chan_ = self.conv_chans[i + 1]
             self.convs.append(AITVitMatteBasicConv3x3(config, in_chan_, out_chan_))
+        self.convs = nn.ModuleList(self.convs)
 
     def forward(self, pixel_values):
         # Start with the original pixel_values
-        embeddings_list = (pixel_values,)
-
-        embeddings = pixel_values
+        embeddings = ops.identity()(pixel_values)
+        embeddings_list = (embeddings, )
         for i in range(len(self.convs)):
             embeddings = self.convs[i](embeddings)
             embeddings_list += (embeddings, )
