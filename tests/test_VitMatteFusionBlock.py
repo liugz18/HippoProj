@@ -7,7 +7,7 @@ from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 from collections import OrderedDict
 
-from model.ait_vitmatte import AITVitMatteBasicConv3x3, AITVitMatteConvStream, AITVitMatteConfig
+from model.ait_vitmatte import AITVitMatteFusionBlock, AITVitMatteConfig
 from model.pt_vitmatte import *
 
 def mark_output(y):
@@ -82,27 +82,17 @@ batch_size=1
 shape_pt = [batch_size, 4, 640, 960]
 
 # create AIT model
-ait_model = AITVitMatteConvStream(mock_config)
-
-
-
-# module, outputs = compile(ait_model, shape_pt, weights)
-ait_model.name_parameter_tensor()
-    # create AIT input Tensor
-X = Tensor(
-    shape=shape_pt,
-    name="X",
-    dtype="float16",
-    is_input=True,
-)
-# run AIT module to generate output tensor
-Y = ait_model(X)
-# mark the output tensor
-outputs = mark_output(Y)
-
+ait_model = AITVitMatteFusionBlock(mock_config)
 
 # create pt model
 pt_model = VitMatteConvStream(mock_config).cuda().half()
+
+# map pt weights to ait
+weights = map_pt_params(ait_model, pt_model)
+
+module, outputs = compile(ait_model, shape_pt, weights)
+
+
 
 
 
@@ -119,8 +109,7 @@ x = x.cuda().half()
 pt_model.eval()
 y_pt = pt_model(x)
 
-# map pt weights to ait
-weights = map_pt_params(ait_model, pt_model)
+
 
 # codegen
 target = detect_target()

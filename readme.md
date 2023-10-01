@@ -12,4 +12,6 @@ python -m tests.test_VitDetResBottleneckBlock
 python -m tests.test_VitMatteBasicConv3x3
 
 python -m tests.test_VitMatteConvStream
+
+python -m tests.test_VitMatteHead
 ```

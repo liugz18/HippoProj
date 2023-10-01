@@ -272,14 +272,16 @@ class AITVitMatteHead(nn.Module):
         mid_channels = 16
 
         self.matting_convs = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=1, padding=1),
+            nn.Conv2dBias(in_channels, mid_channels, kernel_size=3, stride=1, padding=1),
             nn.batch_norm.BatchNorm2d(mid_channels),
             RELU(),
-            nn.Conv2d(mid_channels, 1, kernel_size=1, stride=1, padding=0),
+            nn.Conv2dBias(mid_channels, 1, kernel_size=1, stride=1, padding=0),
         )
 
     def forward(self, hidden_state):
+        hidden_state = ops.permute021()(ops.permute0213()(hidden_state))
         hidden_state = self.matting_convs(hidden_state)
+        hidden_state = ops.permute0213()(ops.permute021()(hidden_state))
 
         return hidden_state
 
