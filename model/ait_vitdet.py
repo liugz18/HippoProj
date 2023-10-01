@@ -3,6 +3,7 @@ import math
 from typing import Dict, List, Optional, Tuple, Union
 
 from aitemplate.compiler import compile_model, ops
+from aitemplate.compiler.public import elementwise, FuncEnum
 from aitemplate.frontend import nn, Tensor
 from aitemplate.testing import detect_target
 from aitemplate.testing.benchmark_pt import benchmark_torch_function
@@ -70,30 +71,22 @@ class AiTVitDetResBottleneckBlock(nn.Module):
         """
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, 1, 1)
-        # self.norm1 = AiTVitDetLayerNorm(bottleneck_channels)
-        # self.act1 = GeluActivation()
+        self.norm1 = AiTVitDetLayerNorm(bottleneck_channels)
+        self.act1 = nn.activation.GELU()
 
-        # self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels, 3, 1, padding=1)
-        # self.norm2 = AiTVitDetLayerNorm(bottleneck_channels)
-        # self.act2 = GeluActivation()
+        self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels, 3, 1, padding=1)
+        self.norm2 = AiTVitDetLayerNorm(bottleneck_channels)
+        self.act2 = nn.activation.GELU()
 
-        # self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, 1)
-        # self.norm3 = AiTVitDetLayerNorm(out_channels)
+        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, 1)
+        self.norm3 = AiTVitDetLayerNorm(out_channels)
 
     def forward(self, x):
         out = x
-        # print(out.shape)
-        # out = ops.permute021()(ops.permute0213()(out)) # permute (0, 1, 2, 3) -> (0, 3, 1, 2)
-        # print(out.shape)
-        # for layer in self.children():
-            # print(layer)
-            # print(out.shape)
-            # out = layer(out)
-        out = self.conv1(out)
-        # out = self.conv2(out)
-        # out = self.conv3(out)
+        out = ops.permute021()(ops.permute0213()(out)) # permute (B, C, H, W) -> (B, H, W, C)
+        for layer in self.children():
+            out = layer(out)
 
-        # out = ops.permute0213()(ops.permute021()(out)) # permute (0, 3, 1, 2) -> (0, 1, 2, 3)
-        # out = x + out
-        # print(out.shape)
+        out = ops.permute0213()(ops.permute021()(out)) # permute (B, H, W, C) -> (B, C, H, W)
+        out = x + out
         return out

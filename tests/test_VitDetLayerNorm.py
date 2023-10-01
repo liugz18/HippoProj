@@ -14,9 +14,11 @@ def map_pt_params(ait_model, pt_model):
     mapped_pt_params = {}
     for name, _ in ait_model.named_parameters():
         ait_name = name.replace(".", "_")
-        print(ait_name)
+        
         assert name in pt_params
-        mapped_pt_params[ait_name] = pt_params[name]
+        param = pt_params[name]
+        print(ait_name, param)
+        mapped_pt_params[ait_name] = param
     return mapped_pt_params
 
 class MockConfig:
@@ -26,7 +28,8 @@ class MockConfig:
 
 batch_size=1
 hidden=5
-shape = [batch_size, 3, hidden, hidden]
+shape_pt = [batch_size, 3, hidden, hidden]
+shape = [batch_size, hidden, hidden, 3]
 mock_config = MockConfig()
 # create AIT model
 ait_model = AiTVitDetLayerNorm(3)
@@ -48,11 +51,12 @@ Y._attrs["name"] = "Y"
 pt_model = VitDetLayerNorm(3).cuda().half()
 
 # create pt input
-x = torch.randn(shape).cuda().half()
+x = torch.randn(shape_pt).cuda().half()
 
 # run pt model
 pt_model.eval()
 y_pt = pt_model(x)
+y_pt = y_pt.permute(0, 2, 3, 1).contiguous()
 
 # map pt weights to ait
 weights = map_pt_params(ait_model, pt_model)
@@ -61,12 +65,13 @@ weights = map_pt_params(ait_model, pt_model)
 target = detect_target()
 print(target)
 with compile_model(
-    Y, target, "./tmp", "simple_model_demo_2", constants=weights
+    Y, target, "./tmp", "VitDetLayerNorm", constants=weights
 ) as module:
     # create storage for output tensor
     y = torch.empty(shape).cuda().half()
 
     # inputs and outputs dict
+    x = x.permute(0, 2, 3, 1).contiguous()
     inputs = {"X": x}
     outputs = {"Y": y}
 
@@ -74,14 +79,6 @@ with compile_model(
     module.run_with_tensors(inputs, outputs, graph_mode=True)
 
     # verify output is correct
+    print(y - y_pt, (y-y_pt).max())
     print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
 
-    # benchmark ait and pt
-    count = 1000
-    ait_t, _, _ = module.benchmark_with_tensors(
-        inputs, outputs, graph_mode=True, count=count
-    )
-    print(f"AITemplate time: {ait_t} ms/iter")
-
-    pt_t = benchmark_torch_function(count, pt_model.forward, x)
-    print(f"PyTorch eager time: {pt_t} ms/iter")

@@ -19,6 +19,7 @@ Moved pytorch vitdet and vitmatte model to local dir for easy hacking
 
 Found BatchNorm, GELU Activation in the [source code of AIT](https://github.com/facebookincubator/AITemplate/blob/d5d0acd4fd1aed1c316a5860a2bf6425483df4e1/python/aitemplate/frontend/nn/activation.py)
 
-porting a conv2d fails out of unknown reason ("tmp_key = next(iter(self._attrs["op_instance"].keys()))
+compiling a conv2d fails out of unknown reason ("tmp_key = next(iter(self._attrs["op_instance"].keys()))
 StopIteration" during profiling)
 
+Ported AiTVitDetResBottleneckBlock, seems like AIT Conv2d can't compile when in_channels is odd
