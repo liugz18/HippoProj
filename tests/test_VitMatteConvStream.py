@@ -1,4 +1,5 @@
 import torch
+import os
 from aitemplate.compiler import compile_model
 from aitemplate.frontend import nn, Tensor
 from aitemplate.testing import detect_target
@@ -32,7 +33,7 @@ def map_pt_params(ait_model, pt_model):
             param_value = pt_model
             for attr in attr_sequence:
                 param_value = getattr(param_value, attr)
-            # print(name, param_value)
+            print(name, param_value.shape)
             pt_params[name] = param_value.clone()
     # print(pt_params.keys())
     # print(list(ait_model.named_parameters()))
@@ -78,7 +79,7 @@ def compile(ait_model, shape_pt, weights):
 mock_config = AITVitMatteConfig
 # create pt input
 batch_size=1
-shape_pt = [batch_size, 4, 460, 960]
+shape_pt = [batch_size, 4, 640, 960]
 
 # create AIT model
 ait_model = AITVitMatteConvStream(mock_config)
@@ -104,7 +105,15 @@ outputs = mark_output(Y)
 pt_model = VitMatteConvStream(mock_config).cuda().half()
 
 
-x = torch.randn(shape_pt).cuda().half()
+
+# Relative path to the .pt file
+tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'pixel_values.pt')
+
+# Load the tensor
+x = torch.load(tensor_path)
+
+# Transfer to GPU and convert to half precision
+x = x.cuda().half()
 
 # run pt model
 pt_model.eval()
@@ -122,7 +131,6 @@ Y, target, "./tmp", "VitMatteConvStream", constants=weights
 
 # inputs and outputs dict
 inputs = {"X": x}
-
 # run
 module.run_with_tensors(inputs, outputs, graph_mode=True)
 
