@@ -218,7 +218,6 @@ class AITVitMatteConvStream(nn.Module):
         self.convs = []#nn.ModuleList()
         self.conv_chans = [in_channels] + out_channels
 
-        # self.convs = (AITVitMatteBasicConv3x3(config, self.conv_chans[0], self.conv_chans[1]),)
 
         for i in range(len(self.conv_chans) - 1):
             in_chan_ = self.conv_chans[i]
@@ -249,13 +248,18 @@ class AITVitMatteFusionBlock(nn.Module):
     def __init__(self, config, in_channels, out_channels):
         super().__init__()
         self.conv = AITVitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
+        # print(in_channels, out_channels)
 
     def forward(self, features, detailed_feature_map):
         features = ops.permute021()(ops.permute0213()(features))
-        upscaled_features = nn.functional.interpolate(features, scale_factor=2, mode="bilinear")
+        detailed_feature_map = ops.permute021()(ops.permute0213()(detailed_feature_map))
+        upscaled_features = ops.upsampling2d(scale_factor=2, mode="bilinear")(features)
         out = ops.concatenate()([detailed_feature_map, upscaled_features], dim=3)
+        # print(out.shape)
+        # print(self.conv)
+        out = ops.permute0213()(ops.permute021()(out))
         out = self.conv(out)
-        out = ops.permute021()(ops.permute0213()(out))
+        
 
         return out
 

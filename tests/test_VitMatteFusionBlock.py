@@ -12,6 +12,8 @@ from model.pt_vitmatte import *
 
 def mark_output(y):
     outputs = ()
+    if type(y) != tuple:
+        y = (y,)
     for i in range(len(y)):
         y[i]._attrs["is_output"] = True
         y[i]._attrs["name"] = f"output_{i}"
@@ -55,18 +57,24 @@ def map_pt_params(ait_model, pt_model):
 
 
 
-def compile(ait_model, shape_pt, weights):
+def compile(ait_model, shape_1, shape_2, weights):
     
     ait_model.name_parameter_tensor()
     # create AIT input Tensor
-    X = Tensor(
-        shape=shape_pt,
-        name="X",
+    X1 = Tensor(
+        shape=shape_1,
+        name="X1",
+        dtype="float16",
+        is_input=True,
+    )
+    X2 = Tensor(
+        shape=shape_2,
+        name="X2",
         dtype="float16",
         is_input=True,
     )
     # run AIT module to generate output tensor
-    Y = ait_model(X)
+    Y = ait_model(X1, X2)
     # mark the output tensor
     outputs = mark_output(Y)
     module = compile_model(
@@ -79,56 +87,66 @@ def compile(ait_model, shape_pt, weights):
 mock_config = AITVitMatteConfig
 # create pt input
 batch_size=1
-shape_pt = [batch_size, 4, 640, 960]
+in_channels = 576
+out_channels = 256
+shape_1 = [batch_size, 384, 40, 60]
+shape_2 = [batch_size, 192, 80, 120]
 
+# codegen
+target = detect_target()
 # create AIT model
-ait_model = AITVitMatteFusionBlock(mock_config)
+ait_model = AITVitMatteFusionBlock(mock_config, in_channels, out_channels)
 
 # create pt model
-pt_model = VitMatteConvStream(mock_config).cuda().half()
+pt_model = VitMatteFusionBlock(mock_config, in_channels, out_channels).cuda().half()
 
 # map pt weights to ait
 weights = map_pt_params(ait_model, pt_model)
 
-module, outputs = compile(ait_model, shape_pt, weights)
+module, outputs = compile(ait_model, shape_1, shape_2, weights)
 
 
 
 
 
 # Relative path to the .pt file
-tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'pixel_values.pt')
+tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'features.pt')
 
 # Load the tensor
-x = torch.load(tensor_path)
+x1 = torch.load(tensor_path)
 
 # Transfer to GPU and convert to half precision
-x = x.cuda().half()
+x1 = x1.cuda().half()
+
+# Relative path to the .pt file
+tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'detailed_feature_map_3.pt')
+
+# Load the tensor
+x2 = torch.load(tensor_path)
+
+# Transfer to GPU and convert to half precision
+x2 = x2.cuda().half()
 
 # run pt model
 pt_model.eval()
-y_pt = pt_model(x)
+y_pt = pt_model(x1, x2)
 
 
 
-# codegen
-target = detect_target()
-module = compile_model(
-Y, target, "./tmp", "VitMatteConvStream", constants=weights
-) 
+
+
 
 
 # inputs and outputs dict
-inputs = {"X": x}
+inputs = {"X1": x1, "X2": x2}
 # run
 module.run_with_tensors(inputs, outputs, graph_mode=True)
 
 # verify output is correct
 print(len(outputs), len(y_pt))
-for y, y_pt_name in zip(outputs, y_pt):
-    print(y_pt_name, y.shape, y_pt[y_pt_name].shape)
-    print((y - y_pt[y_pt_name]).max())
-    print(torch.allclose(y, y_pt[y_pt_name], atol=1e-2, rtol=1e-2))
+for y, y_pt in zip(outputs, y_pt):
+    print((y - y_pt).max())
+    print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
     
 
 # benchmark ait and pt
@@ -138,5 +156,5 @@ ait_t, _, _ = module.benchmark_with_tensors(
 )
 print(f"AITemplate time: {ait_t} ms/iter")
 
-pt_t = benchmark_torch_function(count, pt_model.forward, x)
+pt_t = benchmark_torch_function(count, pt_model.forward, x1, x2)
 print(f"PyTorch eager time: {pt_t} ms/iter")

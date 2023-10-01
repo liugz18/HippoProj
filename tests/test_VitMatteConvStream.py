@@ -33,7 +33,7 @@ def map_pt_params(ait_model, pt_model):
             param_value = pt_model
             for attr in attr_sequence:
                 param_value = getattr(param_value, attr)
-            print(name, param_value.shape)
+            # print(name, param_value.shape)
             pt_params[name] = param_value.clone()
     # print(pt_params.keys())
     # print(list(ait_model.named_parameters()))
@@ -44,7 +44,7 @@ def map_pt_params(ait_model, pt_model):
         
         assert name in pt_params, f"{name} {pt_params.keys()}"
         params = pt_params[name]
-        
+        print(name, ait_name, params.shape)
         if len(params.shape) == 4:
             # NCHW->NHWC
             params = params.permute((0, 2, 3, 1)).contiguous()
