@@ -30,7 +30,7 @@ from transformers.utils import (
     replace_return_docstrings,
 )
 from transformers.utils.backbone_utils import BackboneMixin
-# from transformers.models.vitmatte.configuration_vitmatte import AITVitMatteConfig
+from transformers.models.vitmatte.configuration_vitmatte import VitMatteConfig
 
 from aitemplate.compiler import compile_model, ops
 from aitemplate.frontend import nn, Tensor
@@ -48,6 +48,62 @@ VITMATTE_PRETRAINED_MODEL_ARCHIVE_LIST = [
 
 # General docstring
 # _CONFIG_FOR_DOC = "AITVitMatteConfig"
+configs = {
+  "_commit_hash": "03f5646d1ed954c462f3837123fba723dfd1b3d5",
+  "_name_or_path": "hustvl/vitmatte-small-composition-1k",
+  "architectures": [
+    "VitMatteForImageMatting"
+  ],
+  "backbone_config": {
+    "hidden_size": 384,
+    "image_size": 512,
+    "model_type": "vitdet",
+    "num_attention_heads": 6,
+    "num_channels": 4,
+    "out_features": [
+      "stage12"
+    ],
+    "out_indices": [
+      12
+    ],
+    "residual_block_indices": [
+      2,
+      5,
+      8,
+      11
+    ],
+    "use_relative_position_embeddings": True,
+    "window_block_indices": [
+      0,
+      1,
+      3,
+      4,
+      6,
+      7,
+      9,
+      10
+    ],
+    "window_size": 14
+  },
+  "batch_norm_eps": 1e-05,
+  "convstream_hidden_sizes": [
+    48,
+    96,
+    192
+  ],
+  "fusion_hidden_sizes": [
+    256,
+    128,
+    64,
+    32
+  ],
+  "hidden_size": 384,
+  "initializer_range": 0.02,
+  "model_type": "vitmatte",
+  "torch_dtype": "float32",
+#   "transformers_version": null
+}
+AITVitMatteConfig = VitMatteConfig(**configs)
 
 
 @dataclass
@@ -111,6 +167,17 @@ class RELU(nn.Module):
         result = elementwise(FuncEnum.RELU)(input_val)
         return result
 
+class SIGMOID(nn.Module):
+
+    def __init__(self, ):
+        super().__init__()
+
+    def forward(self, *args):
+        assert len(args) == 1
+        input_val = args[0]
+        result = elementwise(FuncEnum.SIGMOID)(input_val)
+        return result
+
 class AITVitMatteBasicConv3x3(nn.Module):
     """
     Basic convolution layers including: Conv3x3, BatchNorm2d, ReLU layers.
@@ -137,7 +204,7 @@ class AITVitMatteBasicConv3x3(nn.Module):
         return hidden_state
 
 
-class AITVitMatteConvStream(tnn.Module):
+class AITVitMatteConvStream(nn.Module):
     """
     Simple ConvStream containing a series of basic conv3x3 layers to extract detail features.
     """
@@ -148,7 +215,7 @@ class AITVitMatteConvStream(tnn.Module):
         in_channels = config.backbone_config.num_channels
         out_channels = config.convstream_hidden_sizes
 
-        self.convs = tnn.ModuleList()
+        self.convs = nn.ModuleList()
         self.conv_chans = [in_channels] + out_channels
 
         for i in range(len(self.conv_chans) - 1):
@@ -157,96 +224,103 @@ class AITVitMatteConvStream(tnn.Module):
             self.convs.append(AITVitMatteBasicConv3x3(config, in_chan_, out_chan_))
 
     def forward(self, pixel_values):
-        out_dict = {"detailed_feature_map_0": pixel_values}
+        # Start with the original pixel_values
+        embeddings_list = (pixel_values,)
+
         embeddings = pixel_values
         for i in range(len(self.convs)):
             embeddings = self.convs[i](embeddings)
-            name_ = "detailed_feature_map_" + str(i + 1)
-            out_dict[name_] = embeddings
+            embeddings_list += (embeddings, )
 
-        return out_dict
+        # Concatenate all embeddings along the 0th dimension
+        # out_tensor = ops.concatenate()(embeddings_list, dim=0)
 
-
-# class AITVitMatteFusionBlock(tnn.Module):
-#     """
-#     Simple fusion block to fuse features from ConvStream and Plain Vision Transformer.
-#     """
-
-#     def __init__(self, config, in_channels, out_channels):
-#         super().__init__()
-#         self.conv = AITVitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
-
-#     def forward(self, features, detailed_feature_map):
-#         upscaled_features = tnn.functional.interpolate(features, scale_factor=2, mode="bilinear", align_corners=False)
-#         out = torch.cat([detailed_feature_map, upscaled_features], dim=1)
-#         out = self.conv(out)
-
-#         return out
+        return embeddings_list
 
 
-# class AITVitMatteHead(tnn.Module):
-#     """
-#     Simple Matting Head, containing only conv3x3 and conv1x1 layers.
-#     """
 
-#     def __init__(self, config):
-#         super().__init__()
+class AITVitMatteFusionBlock(nn.Module):
+    """
+    Simple fusion block to fuse features from ConvStream and Plain Vision Transformer.
+    """
 
-#         in_channels = config.fusion_hidden_sizes[-1]
-#         mid_channels = 16
+    def __init__(self, config, in_channels, out_channels):
+        super().__init__()
+        self.conv = AITVitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
 
-#         self.matting_convs = tnn.Sequential(
-#             tnn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=1, padding=1),
-#             tnn.BatchNorm2d(mid_channels),
-#             tnn.ReLU(True),
-#             tnn.Conv2d(mid_channels, 1, kernel_size=1, stride=1, padding=0),
-#         )
+    def forward(self, features, detailed_feature_map):
+        features = ops.permute021()(ops.permute0213()(features))
+        upscaled_features = nn.functional.interpolate(features, scale_factor=2, mode="bilinear")
+        out = ops.concatenate()([detailed_feature_map, upscaled_features], dim=3)
+        out = self.conv(out)
+        out = ops.permute021()(ops.permute0213()(out))
 
-#     def forward(self, hidden_state):
-#         hidden_state = self.matting_convs(hidden_state)
-
-#         return hidden_state
+        return out
 
 
-# class AITVitMatteDetailCaptureModule(tnn.Module):
-#     """
-#     Simple and lightweight Detail Capture Module for ViT Matting.
-#     """
+class AITVitMatteHead(nn.Module):
+    """
+    Simple Matting Head, containing only conv3x3 and conv1x1 layers.
+    """
 
-#     def __init__(self, config):
-#         super().__init__()
-#         if len(config.fusion_hidden_sizes) != len(config.convstream_hidden_sizes) + 1:
-#             raise ValueError(
-#                 "The length of fusion_hidden_sizes should be equal to the length of convstream_hidden_sizes + 1."
-#             )
+    def __init__(self, config):
+        super().__init__()
 
-#         self.config = config
-#         self.convstream = AITVitMatteConvStream(config)
-#         self.conv_chans = self.convstream.conv_chans
+        in_channels = config.fusion_hidden_sizes[-1]
+        mid_channels = 16
 
-#         self.fusion_blocks = tnn.ModuleList()
-#         self.fusion_channels = [config.hidden_size] + config.fusion_hidden_sizes
+        self.matting_convs = nn.Sequential(
+            nn.Conv2d(in_channels, mid_channels, kernel_size=3, stride=1, padding=1),
+            nn.batch_norm.BatchNorm2d(mid_channels),
+            RELU(),
+            nn.Conv2d(mid_channels, 1, kernel_size=1, stride=1, padding=0),
+        )
 
-#         for i in range(len(self.fusion_channels) - 1):
-#             self.fusion_blocks.append(
-#                 AITVitMatteFusionBlock(
-#                     config=config,
-#                     in_channels=self.fusion_channels[i] + self.conv_chans[-(i + 1)],
-#                     out_channels=self.fusion_channels[i + 1],
-#                 )
-#             )
+    def forward(self, hidden_state):
+        hidden_state = self.matting_convs(hidden_state)
 
-#         self.matting_head = AITVitMatteHead(config)
+        return hidden_state
 
-#     def forward(self, features, pixel_values):
-#         detail_features = self.convstream(pixel_values)
-#         for i in range(len(self.fusion_blocks)):
-#             detailed_feature_map_name = "detailed_feature_map_" + str(len(self.fusion_blocks) - i - 1)
-#             features = self.fusion_blocks[i](features, detail_features[detailed_feature_map_name])
 
-#         alphas = torch.sigmoid(self.matting_head(features))
+class AITVitMatteDetailCaptureModule(nn.Module):
+    """
+    Simple and lightweight Detail Capture Module for ViT Matting.
+    """
 
-#         return alphas
+    def __init__(self, config):
+        super().__init__()
+        if len(config.fusion_hidden_sizes) != len(config.convstream_hidden_sizes) + 1:
+            raise ValueError(
+                "The length of fusion_hidden_sizes should be equal to the length of convstream_hidden_sizes + 1."
+            )
+
+        self.config = config
+        self.convstream = AITVitMatteConvStream(config)
+        self.conv_chans = self.convstream.conv_chans
+
+        self.fusion_blocks = nn.ModuleList()
+        self.fusion_channels = [config.hidden_size] + config.fusion_hidden_sizes
+
+        for i in range(len(self.fusion_channels) - 1):
+            self.fusion_blocks.append(
+                AITVitMatteFusionBlock(
+                    config=config,
+                    in_channels=self.fusion_channels[i] + self.conv_chans[-(i + 1)],
+                    out_channels=self.fusion_channels[i + 1],
+                )
+            )
+
+        self.matting_head = AITVitMatteHead(config)
+
+    def forward(self, features, pixel_values):
+        detail_features = self.convstream(pixel_values)
+        for i in range(len(self.fusion_blocks)):
+            detailed_feature_map_name = len(self.fusion_blocks) - i - 1
+            features = self.fusion_blocks[i](features, detail_features[detailed_feature_map_name])
+
+        alphas = SIGMOID(self.matting_head(features))
+
+        return alphas
 
 
 # VITMATTE_START_DOCSTRING = r"""
