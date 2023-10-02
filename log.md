@@ -43,3 +43,5 @@ AIT doesn't seem to have einsum op.
 Successfully ported and benchmarked VitDetAttention
 
 Successfully ported and benchmarked VitDetLayer
+
+Try to port the VitDetEncoder, which needs window_partition() that requires 2d padding, didn't find a [corresponding op in AIT.](https://github.com/facebookincubator/AITemplate/issues/140)

@@ -325,7 +325,7 @@ class AITVitDetAttention(nn.Module):
         hidden_state = ops.bmm_rrr()(score, values)
 
         # hidden_state = attention_probs @ values
-        hidden_state = ops.reshape()(hidden_state, [batch_size, self.num_heads, height, width,  -1])#(batch_size, self.num_heads, height, width, -1)
+        hidden_state = ops.reshape()(hidden_state, [batch_size, self.num_heads, height, width,  -1])
         hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1, 4])
         hidden_state = ops.reshape()(hidden_state, [batch_size, height, width, -1])
         hidden_state = self.proj(hidden_state)
@@ -350,13 +350,16 @@ def window_partition(hidden_state, window_size):
         - windows: windows after partition with [batch_size * num_windows, window_size, window_size, num_channels].
         - (patch_height, patch_width): padded height and width before partition
     """
-    batch_size, height, width, num_channels = hidden_state.shape
+    shape = hidden_state._attrs["shape"]
+    batch_size, height, width, num_channels = shape
+    batch_size, height, width, num_channels = batch_size._attrs['values'][0], height._attrs['values'][0], width._attrs['values'][0], num_channels._attrs['values'][0]
+    # from IPython import embed; embed()
 
     pad_height = (window_size - height % window_size) % window_size
     pad_width = (window_size - width % window_size) % window_size
     patch_height, patch_width = height + pad_height, width + pad_width
     if pad_height > 0 or pad_width > 0:
-        hidden_state = ops.expand()(hidden_state, (batch_size, patch_height, patch_width))
+        hidden_state = ops.expand()(hidden_state, (batch_size, patch_height, patch_width, num_channels))
     
 
     hidden_state = ops.reshape()(hidden_state,[
@@ -433,16 +436,19 @@ class AITVitDetLayer(nn.Module):
     def forward(
         self,
         hidden_states: Tensor,
+        head_mask: Optional[Tensor] = None,
+        output_attentions: bool = False,
     ) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor]]:
         hidden_states = ops.permute()(hidden_states, [0, 2, 3, 1])
 
         shortcut = hidden_states
 
         hidden_states = self.norm1(hidden_states)
-
+        # print(hidden_states, hidden_states.shape)
         # Window partition
         if self.window_size > 0:
-            height, width = hidden_states.shape[1], hidden_states.shape[2]
+            shape = hidden_states._attrs["shape"]
+            height, width = shape[1], shape[2]
             hidden_states, pad_height_width = window_partition(hidden_states, self.window_size)
 
         self_attention_outputs = self.attention(
@@ -467,3 +473,54 @@ class AITVitDetLayer(nn.Module):
         outputs = (hidden_states,)
 
         return outputs
+
+
+class AITVitDetEncoder(nn.Module):
+    def __init__(self, config: VitDetConfig) -> None:
+        super().__init__()
+        self.config = config
+        depth = config.num_hidden_layers
+
+        # stochastic depth decay rule
+        drop_path_rate = [0] * depth
+
+        layers = []
+        for i in range(depth):
+            layers.append(
+                AITVitDetLayer(
+                    config,
+                    drop_path_rate=drop_path_rate[i],
+                    window_size=config.window_size if i in config.window_block_indices else 0,
+                    use_residual_block=i in config.residual_block_indices,
+                )
+            )
+
+        self.layer = nn.ModuleList(layers)
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        head_mask: Optional[Tensor] = None,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+        return_dict: bool = True,
+    ) -> tuple:
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
+
+        for i, layer_module in enumerate(self.layer):
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
+            layer_head_mask = head_mask[i] if head_mask is not None else None
+            
+            layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
+
+            hidden_states = layer_outputs[0]
+
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
+        return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+
