@@ -334,6 +334,23 @@ class AITVitDetAttention(nn.Module):
 
         return outputs
 
+def pad_tensor(hidden_state, height, patch_height, width, patch_width):
+    # Permute to move the 'height' dimension to the end
+    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
+    # print(hidden_state.shape, height, patch_height, width, patch_width)
+    # Pad the last dimension (which is now the 'height' dimension)
+    hidden_state = ops.pad_last_dim(4, patch_height)(hidden_state)
+    
+    # Permute to move the 'width' dimension to the end
+    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
+    
+    # Pad the last dimension (which is now the 'width' dimension)
+    hidden_state = ops.pad_last_dim(4, patch_width)(hidden_state)
+    
+    # Permute back to the original order
+    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
+    
+    return hidden_state
 
 def window_partition(hidden_state, window_size):
     """
@@ -359,7 +376,7 @@ def window_partition(hidden_state, window_size):
     pad_width = (window_size - width % window_size) % window_size
     patch_height, patch_width = height + pad_height, width + pad_width
     if pad_height > 0 or pad_width > 0:
-        hidden_state = ops.expand()(hidden_state, (batch_size, patch_height, patch_width, num_channels))
+        hidden_state = pad_tensor(hidden_state, height, patch_height, width, patch_width) #ops.expand()(hidden_state, (batch_size, patch_height, patch_width, num_channels))
     
 
     hidden_state = ops.reshape()(hidden_state,[
@@ -387,11 +404,18 @@ def window_unpartition(windows, window_size, pad_height_width, height_width):
     """
     patch_height, patch_width = pad_height_width
     height, width = height_width
-    batch_size = windows.shape[0] // (patch_height * patch_width // window_size // window_size)
-    hidden_state = windows.view(
-        batch_size, patch_height // window_size, patch_width // window_size, window_size, window_size, -1
+    height, width = height._attrs['values'][0], width._attrs['values'][0]
+    # from IPython import embed; embed()
+
+    shape = windows._attrs["shape"]
+    batch_size, _, _, _ = shape
+    batch_size = batch_size._attrs['values'][0]
+
+    batch_size = batch_size // (patch_height * patch_width // window_size // window_size)
+    hidden_state = ops.reshape()(windows, [
+        batch_size, patch_height // window_size, patch_width // window_size, window_size, window_size, -1]
     )
-    hidden_state = ops.reshape(ops.permute(hidden_state, [0, 1, 3, 2, 4, 5]), [batch_size, patch_height, patch_width, -1])
+    hidden_state = ops.reshape()(ops.permute()(hidden_state, [0, 1, 3, 2, 4, 5]), [batch_size, patch_height, patch_width, -1])
 
     if patch_height > height or patch_width > width:
         # hidden_state = hidden_state[:, :height, :width, :].contiguous()

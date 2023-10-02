@@ -13,6 +13,8 @@ python3 -m tests.test_VitDetAttention
 
 python3 -m tests.test_VitDetLayer
 
+python3 -m tests.test_VitDetEncoder
+
 ```
 
 ## Run VitMatte module unit tests 

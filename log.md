@@ -40,8 +40,12 @@ AIT doesn't support 2d interpolate with different H, W scale.
 AIT doesn't seem to have einsum op.
 
 ## Oct 2
-Successfully ported and benchmarked VitDetAttention
+Successfully ported and benchmarked VitDetAttention, verified and benchmarked
 
-Successfully ported and benchmarked VitDetLayer
+Successfully ported and benchmarked VitDetLayer, verified and benchmarked
 
 Try to port the VitDetEncoder, which needs window_partition() that requires 2d padding, didn't find a [corresponding op in AIT.](https://github.com/facebookincubator/AITemplate/issues/140)
+
+Try to use permute and pad_last_dim
+
+Successfully ported and benchmarked VitDetEncoder, but has maximum 0.04 absolutle error

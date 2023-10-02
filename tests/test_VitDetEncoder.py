@@ -129,9 +129,10 @@ module.run_with_tensors(inputs, outputs, graph_mode=True)
 
 # verify output is correct
 print(len(outputs), len(y_pt))
-for y, y_pt in zip(outputs, y_pt):
-    print((y - y_pt).max())
-    print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
+# print(outputs, y_pt)
+for y, y_pt_name in zip(outputs, y_pt):
+    print((y - y_pt[y_pt_name]).max())
+    print(torch.allclose(y, y_pt[y_pt_name], atol=1e-2, rtol=1e-2))
     
 
 # benchmark ait and pt
