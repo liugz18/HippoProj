@@ -22,7 +22,7 @@ Moved pytorch vitdet and vitmatte model to local dir for easy hacking
 compiling a conv2d fails out of unknown reason ("tmp_key = next(iter(self._attrs["op_instance"].keys()))
 StopIteration" during profiling)
 
-Ported AiTVitDetResBottleneckBlock, seems like AIT Conv2d can't compile when in_channels is odd
+Ported AITVitDetResBottleneckBlock, seems like AIT Conv2d can't compile when in_channels is odd
 
 Found BatchNorm, GELU Activation in the [source code of AIT](https://github.com/facebookincubator/AITemplate/blob/d5d0acd4fd1aed1c316a5860a2bf6425483df4e1/python/aitemplate/frontend/nn/activation.py), so plan to work on porting decoder, which may be easier to port
 
@@ -32,3 +32,12 @@ Solved unexpected input bug, need to use nn.identity() to avoid marking input as
 
 ## Oct 1
 Successfully ported and benchmarked decoder
+
+Prepare to port rest of VitDet, identified several challenges: 
+
+AIT doesn't support 2d interpolate with different H, W scale. 
+
+AIT doesn't seem to have einsum op.
+
+## Oct 2
+Successfully ported and benchmarked  VitDetAttention

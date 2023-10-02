@@ -6,7 +6,7 @@ from aitemplate.testing import detect_target
 
 
 
-class AiTConv2d(ann.Module):
+class AITConv2d(ann.Module):
 
     def __init__(self, in_channels, out_channels):
         super().__init__()
@@ -48,7 +48,7 @@ def mark_output(y):
         y_shape = [d._attrs["values"][0] for d in y[i]._attrs["shape"]]
         print("output_{} shape: {}".format(i, y_shape))
 
-def compile_conv2d_module(model_name="AiTConv2d", batch_size=1, **kwargs):
+def compile_conv2d_module(model_name="AITConv2d", batch_size=1, **kwargs):
 
 
     model_name = f"{model_name}_{batch_size}"
@@ -57,7 +57,7 @@ def compile_conv2d_module(model_name="AiTConv2d", batch_size=1, **kwargs):
     x = Tensor(
         shape=[batch_size, 6, 10, 10], dtype="float16", name="input0", is_input=True
     )
-    model = AiTConv2d(6, 8)
+    model = AITConv2d(6, 8)
     # Mark all parameters with name same to PyTorch name convention
     model.name_parameter_tensor()
     # Forward the input tensor to the model, get output tensor

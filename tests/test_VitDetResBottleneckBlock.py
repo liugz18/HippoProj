@@ -6,7 +6,7 @@ from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 from collections import OrderedDict
 
-from model.ait_vitdet import AiTVitDetResBottleneckBlock
+from model.ait_vitdet import AITVitDetResBottleneckBlock
 from model.pt_vitdet import *
 
 
@@ -37,7 +37,7 @@ shape_pt = [batch_size, 4, hidden, hidden]
 shape = [batch_size, hidden, hidden, 4]
 mock_config = MockConfig()
 # create AIT model
-ait_model = AiTVitDetResBottleneckBlock(None, 4, 4, 6)
+ait_model = AITVitDetResBottleneckBlock(None, 4, 4, 6)
 ait_model.name_parameter_tensor()
 # create AIT input Tensor
 X = Tensor(
@@ -72,7 +72,7 @@ target = detect_target()
 
 
 module = compile_model(
-    Y, target, "./tmp", "AiTVitDetResBottleneckBlock", constants=weights
+    Y, target, "./tmp", "AITVitDetResBottleneckBlock", constants=weights
 ) 
 
 y = torch.empty(shape_pt).cuda().half()

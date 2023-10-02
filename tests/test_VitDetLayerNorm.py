@@ -5,7 +5,7 @@ from aitemplate.testing import detect_target
 from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 
-from model.ait_vitdet import AiTVitDetLayerNorm
+from model.ait_vitdet import AITVitDetLayerNorm
 from model.pt_vitdet import *
 
 def map_pt_params(ait_model, pt_model):
@@ -32,7 +32,7 @@ shape_pt = [batch_size, 3, hidden, hidden]
 shape = [batch_size, hidden, hidden, 3]
 mock_config = MockConfig()
 # create AIT model
-ait_model = AiTVitDetLayerNorm(3)
+ait_model = AITVitDetLayerNorm(3)
 # create AIT input Tensor
 X = Tensor(
       shape=shape,
