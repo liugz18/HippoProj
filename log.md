@@ -40,4 +40,4 @@ AIT doesn't support 2d interpolate with different H, W scale.
 AIT doesn't seem to have einsum op.
 
 ## Oct 2
-Successfully ported and benchmarked  VitDetAttention
+Successfully ported and benchmarked VitDetAttention

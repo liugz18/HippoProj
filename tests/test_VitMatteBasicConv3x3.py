@@ -80,7 +80,7 @@ target = detect_target()
 
 
 module = compile_model(
-    Y, target, "./tmp", "AITVitDetResBottleneckBlock", constants=weights
+    Y, target, "./tmp", "VitMatteBasicConv3x3", constants=weights
 ) 
 
 y = torch.empty(shape_after).cuda().half()
