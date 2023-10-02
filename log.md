@@ -49,3 +49,6 @@ Try to port the VitDetEncoder, which needs window_partition() that requires 2d p
 Try to use permute and pad_last_dim
 
 Successfully ported and benchmarked VitDetEncoder, but has maximum 0.04 absolutle error
+
+Resolved the error, it propagates from AITVitDetLayerNorm, in which elementwise(FuncEnum.POW)(2, x-u) is not accurate, so used (x-u) * (x-u). Thus Successfully verified and benchmarked VitDetEncoder, the core of backbone.
+

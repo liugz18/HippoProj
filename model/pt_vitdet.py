@@ -360,7 +360,7 @@ class VitDetResBottleneckBlock(nn.Module):
         self.act2 = ACT2FN[config.hidden_act]
 
         self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, bias=False)
-        self.norm3 = VitDetLayerNorm(out_channels)
+        # self.norm3 = VitDetLayerNorm(out_channels)
 
     def forward(self, x):
         out = x

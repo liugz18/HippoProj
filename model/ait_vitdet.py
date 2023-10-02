@@ -227,11 +227,11 @@ class AITVitDetLayerNorm(nn.Module):
 
     def forward(self, x):
         u = ops.reduce_mean(dim=3, keepdim=True)(x)
-        s = ops.vector_norm(dim=3, keepdim=True)(x - u)
-        s = s / math.sqrt(self.normalized_shape[0]) + self.eps
-        x = (x - u) / s
+
+        s = (x-u) * (x-u)#elementwise(FuncEnum.POW)(2, x-u)
+        s = ops.reduce_mean(dim=3, keepdim=True)(s)
+        x = (x - u) / elementwise(FuncEnum.SQRT)(s + self.eps)
         w = ops.unsqueeze(0)(ops.unsqueeze(0)(self.weight._tensor))
-        # print(w.shape())
         x = w * x 
         x = x + ops.unsqueeze(0)(ops.unsqueeze(0)(self.bias._tensor))
         return x
@@ -266,7 +266,7 @@ class AITVitDetResBottleneckBlock(nn.Module):
         self.act2 = nn.activation.GELU()
 
         self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, 1)
-        self.norm3 = AITVitDetLayerNorm(out_channels)
+        # self.norm3 = AITVitDetLayerNorm(out_channels)
 
     def forward(self, x):
         out = x
