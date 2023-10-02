@@ -41,3 +41,5 @@ AIT doesn't seem to have einsum op.
 
 ## Oct 2
 Successfully ported and benchmarked VitDetAttention
+
+Successfully ported and benchmarked VitDetLayer

@@ -11,6 +11,8 @@ python -m tests.test_VitDetResBottleneckBlock
 
 python3 -m tests.test_VitDetAttention
 
+python3 -m tests.test_VitDetLayer
+
 ```
 
 ## Run VitMatte module unit tests 
