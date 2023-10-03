@@ -102,3 +102,24 @@ python -m tests.test_VitMatteFusionBlock
 
 python -m tests.test_VitMatteDetailCaptureModule
 ```
+
+## Repo Structure
+
+- `environment.yml`: Conda environment specification.
+- `log.md`: Project log or notes.
+- `readme.md`: Project documentation and instructions.
+- `run.py`: Main executable script (Only for running PyTorch module, since the porting is not end2end).
+
+- `model`: Directory for model implementations.
+  - `ait_vitdet.py`: AIT VitDet model.
+  - `ait_vitmatte.py`: AIT VitMatte model.
+  - `pt_vitdet.py`: PyTorch VitDet model.
+  - `pt_vitmatte.py`: PyTorch VitMatte model.
+
+- `saved_tensors`: Directory of saved intermediate tensor data, for unit tests.
+  - Contains tensors like `alphas.pt`, `attention_input.pt`, etc.
+
+- `tests`: Unit tests directory.
+  - Contains tests for components such as `VitDetEncoder`, `VitMatteDetailCaptureModule`, etc.
+
+- `try`: Directory for experimental scripts.
