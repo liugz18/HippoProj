@@ -117,11 +117,6 @@ pt_model.eval()
 y_pt = pt_model(x1)
 
 
-
-
-
-
-
 # inputs and outputs dict
 inputs = {"X1": x1}
 # run
