@@ -24,6 +24,7 @@ Key takeaways and challenges:
 
 5. I saved many intermediate Torch Tensors from the original huggingface pipeline, in order to do the module tests.
 
+The VitMatte module is easier to port compared to its VitDet backbone. 
 
 ## Benchmarking VitDet modules
 | Module                       | Maximum Absolute Error | AIT Runtime (s) | Pytorch Runtime (s) |
@@ -35,15 +36,15 @@ Key takeaways and challenges:
 | VitDetLayer                  |    0.0156              |   0.4193    |   0.5886        |
 | VitDetEncoder                |    0.0469              |   3.9350    |   10.5954       |
 
-The VitMatte module is easier to port compared to its VitDet backbone. 
 
-The only parts unfinished are: 
+
+For the backbone part, I have finally ported VitDetEncoder (w/o positional encoding), which is the key part of the backbone. The only parts unfinished are: 
 
 1. VitDetEmbedding: AIT doesn't support 2d interpolate with different H, W scale.
 
 2. The relative positional encoding of VitDetEncoder: Same issue with 2d interpolate, also AIT doesn't seem to have einsum op.
 
-Given enough time I should be able to extend the ops in AIT and find a way out, but I regret to say that I have coursework that needs much attention this week, and wasn't able to port it end2end. But I have finally ported VitDetEncoder (w/o positional encoding), which is the key part of the backbone.
+Given enough time I should be able to extend the ops in AIT and find a way out, but I regret to say that I have coursework that needs much attention this week, and wasn't able to port it end2end. 
 
 Key takeaways are:
 
@@ -55,6 +56,20 @@ Key takeaways are:
 
 In general I'd say AIT is a great framework that accelerates heavy DL models, which is super exciting to me. Though it indeed requires certain amount of warmups to get familiar with, given the docs are not complete as well as some Github issues. The learning curve can be greatly flattened if there are more examples provided in official docs.
 
+## Reproduce Environment Record
+
+### CUDA Compilation Tools
+- **Release**: 12.2
+- **Version**: V12.2.128
+
+### Build Information
+- **CUDA Version**: 12.2.r12.2
+- **Compiler Build**: 33053471_0
+
+### Package Information
+- **Python**: 3.10.0
+- **PyTorch**: 2.0.1+cu118
+more info in environment.yml
 
 ## Run VitDet module unit tests 
 
