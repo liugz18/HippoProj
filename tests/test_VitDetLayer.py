@@ -131,8 +131,8 @@ module.run_with_tensors(inputs, outputs, graph_mode=True)
 # verify output is correct
 print(len(outputs), len(y_pt))
 for y, y_pt in zip(outputs, y_pt):
-    print((y - y_pt).max())
-    print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
+    print("Maximum Absolute Error: ", (y - y_pt).max())
+    print("Error is below threshold: ", torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
     
 
 # benchmark ait and pt

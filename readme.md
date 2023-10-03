@@ -34,7 +34,7 @@ The VitMatte module is easier to port compared to its VitDet backbone.
 | VitDetResBottleneckBlock     |    0.0039              |   0.0877    |   0.4749        |
 | VitDetAttention              |    0.0002              |   0.1238    |   0.2775        |
 | VitDetLayer                  |    0.0156              |   0.4193    |   0.5886        |
-| VitDetEncoder                |    0.0469              |   3.9350    |   10.5954       |
+| VitDetEncoder                |    0.0156              |   3.9350    |   10.5954       |
 
 
 

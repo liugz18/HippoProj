@@ -85,26 +85,17 @@ x = torch.randn(shape).cuda().half()
 # run pt model
 pt_model.eval()
 y_pt = pt_model(x)
-# y_pt = torch.permute(y_pt, [0,2,3,1])
-# y_pt = y_pt.contiguous()
 
 # map pt weights to ait
 weights = map_pt_params(ait_model, pt_model)
 
 # codegen
 target = detect_target()
-print("Target:", target)
-# with compile_model(
-#     Y, target, "./tmp", "simple_model_demo_3", constants=weights
-# ) as module:
 
 module = compile_model(
     Y, target, "./tmp", "GeluActivation"
 ) 
 
-# for name, param in ait_params.items():
-#     module.set_constant_with_tensor(name, param)
-    # create storage for output tensor
 y = torch.empty(shape).cuda().half()
 
 # inputs and outputs dict

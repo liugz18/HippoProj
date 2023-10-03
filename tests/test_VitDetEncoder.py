@@ -29,7 +29,6 @@ def map_pt_params(ait_model, pt_model):
 
     # Add the missing batch_norm statistics to pt_params
     for name, _ in ait_model.named_parameters():
-        # print(name, name not in pt_params, "batch_norm" in name)
         if name not in pt_params and ("running_mean" in name or "running_var" in name or "num_batches_tracked" in name):
             attr_sequence = name.split('.')
             param_value = pt_model
@@ -37,8 +36,6 @@ def map_pt_params(ait_model, pt_model):
                 param_value = getattr(param_value, attr)
             print(name, param_value.shape)
             pt_params[name] = param_value.clone()
-    # print(pt_params.keys())
-    # print(list(ait_model.named_parameters()))
 
     mapped_pt_params = OrderedDict()
     for name, _ in ait_model.named_parameters():
@@ -74,7 +71,6 @@ def compile(ait_model, shape_1, weights):
     module = compile_model(
     Y, target, "./tmp", "VitDetEncoder", constants=weights
 ) 
-    # y = torch.empty(shape_after).cuda().half()
 
     return module, outputs
 
@@ -99,11 +95,8 @@ weights = map_pt_params(ait_model, pt_model)
 module, outputs = compile(ait_model, shape_1, weights)
 
 
-
-
-
 # Relative path to the .pt file
-tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'features.pt')
+tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'encoder_input.pt')
 
 # Load the tensor
 x1 = torch.load(tensor_path)
@@ -126,8 +119,8 @@ module.run_with_tensors(inputs, outputs, graph_mode=True)
 print(len(outputs), len(y_pt))
 # print(outputs, y_pt)
 for y, y_pt_name in zip(outputs, y_pt):
-    print((y - y_pt[y_pt_name]).max())
-    print(torch.allclose(y, y_pt[y_pt_name], atol=1e-2, rtol=1e-2))
+    print("Maximum Absolute Error: ", (y - y_pt[y_pt_name]).max())
+    print("Error is below threshold: ", torch.allclose(y, y_pt[y_pt_name], atol=1e-2, rtol=1e-2))
     
 
 # benchmark ait and pt
