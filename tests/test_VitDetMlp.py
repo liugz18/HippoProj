@@ -8,6 +8,7 @@ from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 from model.ait_vitdet import AITVitDetMlp
 from model.pt_vitdet import *
 
+
 def map_pt_params(ait_model, pt_model):
     ait_model.name_parameter_tensor()
     pt_params = dict(pt_model.named_parameters())
@@ -18,22 +19,24 @@ def map_pt_params(ait_model, pt_model):
         mapped_pt_params[ait_name] = pt_params[name]
     return mapped_pt_params
 
+
 class MockConfig:
     def __init__(self) -> None:
         self.dropout_prob = 0.1
         self.hidden_act = "gelu"
 
-batch_size=1024
-hidden=512
+
+batch_size = 1024
+hidden = 512
 mock_config = MockConfig()
 # create AIT model
 ait_model = AITVitDetMlp(in_features=hidden, hidden_features=hidden, config=mock_config)
 # create AIT input Tensor
 X = Tensor(
-      shape=[batch_size, hidden],
-      name="X",
-      dtype="float16",
-      is_input=True,
+    shape=[batch_size, hidden],
+    name="X",
+    dtype="float16",
+    is_input=True,
 )
 # run AIT module to generate output tensor
 Y = ait_model(X)
@@ -41,8 +44,8 @@ Y = ait_model(X)
 Y._attrs["is_output"] = True
 Y._attrs["name"] = "Y"
 
-batch_size=1024
-hidden=512
+batch_size = 1024
+hidden = 512
 # create pt model
 pt_model = VitDetMlp(mock_config, hidden, hidden).cuda().half()
 

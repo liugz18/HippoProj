@@ -13,66 +13,554 @@ from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 
 
-
 config = {
-  "drop_path_rate": 0.0,
-  "dropout_prob": 0.0,
-  "hidden_act": "gelu",
-  "hidden_size": 384,
-  "image_size": 512,
-  "initializer_range": 0.02,
-  "layer_norm_eps": 1e-06,
-  "mlp_ratio": 4,
-  "model_type": "vitdet",
-  "num_attention_heads": 6,
-  "num_channels": 4,
-  "num_hidden_layers": 12,
-  "out_features": [
-    "stage12"
-  ],
-  "out_indices": [
-    12
-  ],
-  "patch_size": 16,
-  "pretrain_image_size": 224,
-  "qkv_bias": True,
-  "residual_block_indices": [
-    2,
-    5,
-    8,
-    11
-  ],
-  "stage_names": [
-    "stem",
-    "stage1",
-    "stage2",
-    "stage3",
-    "stage4",
-    "stage5",
-    "stage6",
-    "stage7",
-    "stage8",
-    "stage9",
-    "stage10",
-    "stage11",
-    "stage12"
-  ],
-  "transformers_version": "4.34.0.dev0",
-  "use_absolute_position_embeddings": True,
-  "use_relative_position_embeddings": True,
-  "window_block_indices": [
-    0,
-    1,
-    3,
-    4,
-    6,
-    7,
-    9,
-    10
-  ],
-  "window_size": 14
+    "drop_path_rate": 0.0,
+    "dropout_prob": 0.0,
+    "hidden_act": "gelu",
+    "hidden_size": 384,
+    "image_size": 512,
+    "initializer_range": 0.02,
+    "layer_norm_eps": 1e-06,
+    "mlp_ratio": 4,
+    "model_type": "vitdet",
+    "num_attention_heads": 6,
+    "num_channels": 4,
+    "num_hidden_layers": 12,
+    "out_features": ["stage12"],
+    "out_indices": [12],
+    "patch_size": 16,
+    "pretrain_image_size": 224,
+    "qkv_bias": True,
+    "residual_block_indices": [2, 5, 8, 11],
+    "stage_names": [
+        "stem",
+        "stage1",
+        "stage2",
+        "stage3",
+        "stage4",
+        "stage5",
+        "stage6",
+        "stage7",
+        "stage8",
+        "stage9",
+        "stage10",
+        "stage11",
+        "stage12",
+    ],
+    "transformers_version": "4.34.0.dev0",
+    "use_absolute_position_embeddings": True,
+    "use_relative_position_embeddings": True,
+    "window_block_indices": [0, 1, 3, 4, 6, 7, 9, 10],
+    "window_size": 14,
 }
 AITVitDetConfig = VitDetConfig(**config)
+
+
+class AITVitDetMlp(nn.Module):
+    def __init__(self, config, in_features: int, hidden_features: int) -> None:
+        super().__init__()
+        self.fc1 = nn.Linear(in_features, hidden_features, specialization="fast_gelu")
+        self.fc2 = nn.Linear(hidden_features, in_features)
+        self.drop = nn.Dropout(config.dropout_prob if config else 0.1)
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = self.fc1(x)
+        x = self.drop(x)
+        x = self.fc2(x)
+
+        return x
+
+
+class AITVitDetLayerNorm(nn.Module):
+    """
+    A LayerNorm variant, popularized by Transformers, that performs point-wise mean and variance normalization over the
+    channel dimension for inputs that have shape (batch_size, channels, height, width).
+    https://github.com/facebookresearch/ConvNeXt/blob/d1fa8f6fef0a165b27399986cc2bdacc92777e40/models/convnext.py#L119
+    """
+
+    def __init__(self, normalized_shape, eps=1e-6, dtype="float16"):
+        super().__init__()
+        self.weight = nn.Parameter(shape=[normalized_shape], dtype=dtype)
+        self.bias = nn.Parameter(shape=[normalized_shape], dtype=dtype)
+        self.eps = eps
+        self.normalized_shape = (normalized_shape,)
+        self.dtype = dtype
+
+    def forward(self, x):
+        u = ops.reduce_mean(dim=3, keepdim=True)(x)
+
+        s = (x - u) * (x - u)  # elementwise(FuncEnum.POW)(2, x-u)
+        s = ops.reduce_mean(dim=3, keepdim=True)(s)
+        x = (x - u) / elementwise(FuncEnum.SQRT)(s + self.eps)
+        w = ops.unsqueeze(0)(ops.unsqueeze(0)(self.weight._tensor))
+        x = w * x
+        x = x + ops.unsqueeze(0)(ops.unsqueeze(0)(self.bias._tensor))
+        return x
+
+
+class AITVitDetResBottleneckBlock(nn.Module):
+    """
+    The standard bottleneck residual block without the last activation layer. It contains 3 conv layers with kernels
+    1x1, 3x3, 1x1.
+    """
+
+    def __init__(self, config, in_channels, out_channels, bottleneck_channels):
+        """
+        Args:
+            config (`VitDetConfig`):
+                Model configuration.
+            in_channels (`int`):
+                Number of input channels.
+            out_channels (`int`):
+                Number of output channels.
+            bottleneck_channels (`int`):
+                Number of output channels for the 3x3 "bottleneck" conv layers.
+        """
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, 1, 1)
+        self.norm1 = AITVitDetLayerNorm(bottleneck_channels)
+        self.act1 = nn.activation.GELU()
+
+        self.conv2 = nn.Conv2d(
+            bottleneck_channels, bottleneck_channels, 3, 1, padding=1
+        )
+        self.norm2 = AITVitDetLayerNorm(bottleneck_channels)
+        self.act2 = nn.activation.GELU()
+
+        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, 1)
+        # self.norm3 = AITVitDetLayerNorm(out_channels)
+
+    def forward(self, x):
+        out = x
+        out = ops.permute021()(
+            ops.permute0213()(out)
+        )  # permute (B, C, H, W) -> (B, H, W, C)
+        for layer in self.children():
+            out = layer(out)
+
+        out = ops.permute0213()(
+            ops.permute021()(out)
+        )  # permute (B, H, W, C) -> (B, C, H, W)
+        out = x + out
+        return out
+
+
+class AITVitDetAttention(nn.Module):
+    """Multi-head Attention block with relative position embeddings."""
+
+    def __init__(self, config, input_size=None):
+        """
+        Args:
+            config (`VitDetConfig`):
+                Model configuration.
+            input_size (`Tuple[int]`, *optional*):
+                Input resolution, only required in case relative position embeddings are added.
+        """
+        super().__init__()
+
+        dim = config.hidden_size
+        num_heads = config.num_attention_heads
+
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = head_dim**-0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=config.qkv_bias)
+        self.proj = nn.Linear(dim, dim)
+
+        self.use_relative_position_embeddings = config.use_relative_position_embeddings
+        if self.use_relative_position_embeddings:
+            # initialize relative positional embeddings
+            self.rel_pos_h = nn.Parameter(shape=[2 * input_size[0] - 1, head_dim])
+            self.rel_pos_w = nn.Parameter(shape=[2 * input_size[1] - 1, head_dim])
+
+    def forward(self, hidden_state):
+        batch_size, height, width, _ = hidden_state.shape()
+        # qkv with shape (3, batch_size, num_heads, height * width, num_channels)
+        qkv = self.qkv(hidden_state)
+        qkv = ops.permute()(
+            ops.reshape()(qkv, [batch_size, height * width, 3, self.num_heads, -1]),
+            [2, 0, 3, 1, 4],
+        )
+        # queries, keys and values have shape (batch_size * num_heads, height * width, num_channels)
+        qkv = ops.reshape()(qkv, [3, batch_size * self.num_heads, height * width, -1])
+        queries, keys, values = ops.split()(qkv, 1, dim=0)  # [0], qkv[1], qkv[2]
+
+        queries, keys, values = (
+            ops.squeeze(0)(queries),
+            ops.squeeze(0)(keys),
+            ops.squeeze(0)(values),
+        )
+        keys = ops.permute021()(keys)
+        qk = ops.bmm_rrr()(queries, keys)
+        score = ops.elementwise(FuncEnum.MUL)(qk, self.scale)
+        score = ops.softmax()(score, -1)
+        hidden_state = ops.bmm_rrr()(score, values)
+
+        # hidden_state = attention_probs @ values
+        hidden_state = ops.reshape()(
+            hidden_state, [batch_size, self.num_heads, height, width, -1]
+        )
+        hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1, 4])
+        hidden_state = ops.reshape()(hidden_state, [batch_size, height, width, -1])
+        hidden_state = self.proj(hidden_state)
+
+        outputs = (hidden_state,)
+
+        return outputs
+
+
+def pad_tensor(hidden_state, height, patch_height, width, patch_width):
+    # Permute to move the 'height' dimension to the end
+    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
+    # Pad the last dimension (which is now the 'height' dimension)
+    hidden_state = ops.pad_last_dim(4, patch_height)(hidden_state)
+
+    # Permute to move the 'width' dimension to the end
+    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
+
+    # Pad the last dimension (which is now the 'width' dimension)
+    hidden_state = ops.pad_last_dim(4, patch_width)(hidden_state)
+
+    # Permute back to the original order
+    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
+
+    return hidden_state
+
+
+def window_partition(hidden_state, window_size):
+    """
+    Partition into non-overlapping windows with padding if needed.
+
+    Args:
+        hidden_state (`torch.Tensor`):
+            Input tokens with [batch_size, height, width, num_channels].
+        window_size (`int`):
+            Window size.
+
+    Returns:
+        `tuple(torch.FloatTensor)` comprising various elements:
+        - windows: windows after partition with [batch_size * num_windows, window_size, window_size, num_channels].
+        - (patch_height, patch_width): padded height and width before partition
+    """
+    shape = hidden_state._attrs["shape"]
+    batch_size, height, width, num_channels = shape
+    batch_size, height, width, num_channels = (
+        batch_size._attrs["values"][0],
+        height._attrs["values"][0],
+        width._attrs["values"][0],
+        num_channels._attrs["values"][0],
+    )
+    # from IPython import embed; embed()
+
+    pad_height = (window_size - height % window_size) % window_size
+    pad_width = (window_size - width % window_size) % window_size
+    patch_height, patch_width = height + pad_height, width + pad_width
+    if pad_height > 0 or pad_width > 0:
+        hidden_state = pad_tensor(
+            hidden_state, height, patch_height, width, patch_width
+        )  # ops.expand()(hidden_state, (batch_size, patch_height, patch_width, num_channels))
+
+    hidden_state = ops.reshape()(
+        hidden_state,
+        [
+            batch_size,
+            patch_height // window_size,
+            window_size,
+            patch_width // window_size,
+            window_size,
+            num_channels,
+        ],
+    )
+    windows = ops.reshape()(
+        ops.permute()(hidden_state, [0, 1, 3, 2, 4, 5]),
+        [-1, window_size, window_size, num_channels],
+    )
+    return windows, (patch_height, patch_width)
+
+
+def window_unpartition(windows, window_size, pad_height_width, height_width):
+    """
+    Window unpartition into original sequences and removing padding.
+
+    Args:
+        windows (`torch.Tensor`):
+            Input tokens with [batch_size * num_windows, window_size, window_size, num_channels].
+        window_size (`int`):
+            Window size.
+        pad_height_width (`Tuple[int]`):
+            Padded height and width (patch_height, patch_width).
+        height_width (`Tuple[int]`):
+            Original height and width before padding.
+
+    Returns:
+        hidden_state: unpartitioned sequences with [batch_size, height, width, num_channels].
+    """
+    patch_height, patch_width = pad_height_width
+    height, width = height_width
+    height, width = height._attrs["values"][0], width._attrs["values"][0]
+
+    shape = windows._attrs["shape"]
+    batch_size, _, _, _ = shape
+    batch_size = batch_size._attrs["values"][0]
+
+    batch_size = batch_size // (
+        patch_height * patch_width // window_size // window_size
+    )
+    hidden_state = ops.reshape()(
+        windows,
+        [
+            batch_size,
+            patch_height // window_size,
+            patch_width // window_size,
+            window_size,
+            window_size,
+            -1,
+        ],
+    )
+    hidden_state = ops.reshape()(
+        ops.permute()(hidden_state, [0, 1, 3, 2, 4, 5]),
+        [batch_size, patch_height, patch_width, -1],
+    )
+
+    if patch_height > height or patch_width > width:
+        # hidden_state = hidden_state[:, :height, :width, :].contiguous()
+        hidden_state = ops.dynamic_slice()(
+            hidden_state,
+            start_indices=[0, 0, 0, 0],
+            end_indices=[None, height, width, None],
+        )
+    return hidden_state
+
+
+class AITVitDetLayer(nn.Module):
+    """This corresponds to the Block class in the original implementation."""
+
+    def __init__(
+        self,
+        config: VitDetConfig,
+        drop_path_rate: float = 0,
+        window_size: int = 0,
+        use_residual_block: bool = False,
+    ) -> None:
+        super().__init__()
+
+        dim = config.hidden_size
+        input_size = (
+            config.image_size // config.patch_size,
+            config.image_size // config.patch_size,
+        )
+
+        self.norm1 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
+        self.attention = AITVitDetAttention(
+            config,
+            input_size=input_size if window_size == 0 else (window_size, window_size),
+        )
+
+        self.norm2 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
+        self.mlp = AITVitDetMlp(
+            config=config, in_features=dim, hidden_features=int(dim * config.mlp_ratio)
+        )
+
+        self.window_size = window_size
+
+        self.use_residual_block = use_residual_block
+        if self.use_residual_block:
+            # Use a residual block with bottleneck channel as dim // 2
+            self.residual = AITVitDetResBottleneckBlock(
+                config=config,
+                in_channels=dim,
+                out_channels=dim,
+                bottleneck_channels=dim // 2,
+            )
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        head_mask: Optional[Tensor] = None,
+        output_attentions: bool = False,
+    ) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor]]:
+        hidden_states = ops.permute()(hidden_states, [0, 2, 3, 1])
+
+        shortcut = hidden_states
+
+        hidden_states = self.norm1(hidden_states)
+        # print(hidden_states, hidden_states.shape)
+        # Window partition
+        if self.window_size > 0:
+            shape = hidden_states._attrs["shape"]
+            height, width = shape[1], shape[2]
+            hidden_states, pad_height_width = window_partition(
+                hidden_states, self.window_size
+            )
+
+        self_attention_outputs = self.attention(hidden_states)
+        hidden_states = self_attention_outputs[0]
+
+        # Reverse window partition
+        if self.window_size > 0:
+            hidden_states = window_unpartition(
+                hidden_states, self.window_size, pad_height_width, (height, width)
+            )
+
+        # first residual connection
+        hidden_states = shortcut + hidden_states
+
+        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
+
+        hidden_states = ops.permute()(hidden_states, [0, 3, 1, 2])
+
+        if self.use_residual_block:
+            hidden_states = self.residual(hidden_states)
+
+        outputs = (hidden_states,)
+
+        return outputs
+
+
+class AITVitDetEncoder(nn.Module):
+    def __init__(self, config: VitDetConfig) -> None:
+        super().__init__()
+        self.config = config
+        depth = config.num_hidden_layers
+
+        # stochastic depth decay rule
+        drop_path_rate = [0] * depth
+
+        layers = []
+        for i in range(depth):
+            layers.append(
+                AITVitDetLayer(
+                    config,
+                    drop_path_rate=drop_path_rate[i],
+                    window_size=config.window_size
+                    if i in config.window_block_indices
+                    else 0,
+                    use_residual_block=i in config.residual_block_indices,
+                )
+            )
+
+        self.layer = nn.ModuleList(layers)
+
+    def forward(
+        self,
+        hidden_states: Tensor,
+        head_mask: Optional[Tensor] = None,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+        return_dict: bool = True,
+    ) -> tuple:
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
+
+        for i, layer_module in enumerate(self.layer):
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
+            layer_head_mask = head_mask[i] if head_mask is not None else None
+
+            layer_outputs = layer_module(
+                hidden_states, layer_head_mask, output_attentions
+            )
+
+            hidden_states = layer_outputs[0]
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
+        return tuple(
+            v
+            for v in [hidden_states, all_hidden_states, all_self_attentions]
+            if v is not None
+        )
+
+
+"""The Rest are Not fully ported modules"""
+
+
+class AITVitDetBackbone:
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.embeddings = VitDetEmbeddings(config)
+        self.encoder = AITVitDetEncoder(config)
+        self.num_features = [
+            config.hidden_size for _ in range(config.num_hidden_layers + 1)
+        ]
+
+        # initialize weights and apply final processing
+        self.post_init()
+
+    def get_input_embeddings(self) -> VitDetEmbeddings:
+        return self.embeddings.projection
+
+    def forward(
+        self,
+        pixel_values: Tensor,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Tensor:
+        """
+        Returns:
+
+        Examples:
+
+        ```python
+        >>> from transformers import VitDetConfig, VitDetBackbone
+        >>> import torch
+
+        >>> config = VitDetConfig()
+        >>> model = VitDetBackbone(config)
+
+        >>> pixel_values = torch.randn(1, 3, 224, 224)
+
+        >>> with torch.no_grad():
+        ...     outputs = model(pixel_values)
+
+        >>> feature_maps = outputs.feature_maps
+        >>> list(feature_maps[-1].shape)
+        [1, 768, 14, 14]
+        ```"""
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
+
+        embedding_output = self.embeddings(pixel_values)
+
+        outputs = self.encoder(
+            embedding_output,
+            output_hidden_states=True,
+            output_attentions=output_attentions,
+            return_dict=return_dict,
+        )
+
+        hidden_states = outputs[1]
+
+        feature_maps = ()
+        for stage, hidden_state in zip(self.stage_names, hidden_states):
+            if stage in self.out_features:
+                feature_maps += (hidden_state,)
+
+        if not return_dict:
+            if output_hidden_states:
+                output = (feature_maps,) + outputs[1:]
+            else:
+                output = (feature_maps,) + outputs[2:]
+            return output
+
+        return feature_maps
+
 
 # class VitDetEmbeddings(nn.Module):
 #     """
@@ -195,429 +683,3 @@ AITVitDetConfig = VitDetConfig(**config)
 #     relative_coords = (q_coords - k_coords) + (k_size - 1) * max(q_size / k_size, 1.0)
 
 #     return rel_pos_resized[relative_coords.long()]
-
-class AITVitDetMlp(nn.Module):
-    def __init__(self, config, in_features: int, hidden_features: int) -> None:
-        super().__init__()
-        self.fc1 = nn.Linear(in_features, hidden_features, specialization="fast_gelu")
-        self.fc2 = nn.Linear(hidden_features, in_features)
-        self.drop = nn.Dropout(config.dropout_prob if config else 0.1) 
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = self.fc1(x)
-        x = self.drop(x)
-        x = self.fc2(x)
-
-        return x
-
-class AITVitDetLayerNorm(nn.Module):
-    """
-    A LayerNorm variant, popularized by Transformers, that performs point-wise mean and variance normalization over the
-    channel dimension for inputs that have shape (batch_size, channels, height, width).
-    https://github.com/facebookresearch/ConvNeXt/blob/d1fa8f6fef0a165b27399986cc2bdacc92777e40/models/convnext.py#L119
-    """
-
-    def __init__(self, normalized_shape, eps=1e-6, dtype="float16"):
-        super().__init__()
-        self.weight = nn.Parameter(shape=[normalized_shape], dtype=dtype)
-        self.bias = nn.Parameter(shape=[normalized_shape], dtype=dtype)
-        self.eps = eps
-        self.normalized_shape = (normalized_shape,)
-        self.dtype=dtype
-
-    def forward(self, x):
-        u = ops.reduce_mean(dim=3, keepdim=True)(x)
-
-        s = (x-u) * (x-u)#elementwise(FuncEnum.POW)(2, x-u)
-        s = ops.reduce_mean(dim=3, keepdim=True)(s)
-        x = (x - u) / elementwise(FuncEnum.SQRT)(s + self.eps)
-        w = ops.unsqueeze(0)(ops.unsqueeze(0)(self.weight._tensor))
-        x = w * x 
-        x = x + ops.unsqueeze(0)(ops.unsqueeze(0)(self.bias._tensor))
-        return x
-
-
-
-class AITVitDetResBottleneckBlock(nn.Module):
-    """
-    The standard bottleneck residual block without the last activation layer. It contains 3 conv layers with kernels
-    1x1, 3x3, 1x1.
-    """
-
-    def __init__(self, config, in_channels, out_channels, bottleneck_channels):
-        """
-        Args:
-            config (`VitDetConfig`):
-                Model configuration.
-            in_channels (`int`):
-                Number of input channels.
-            out_channels (`int`):
-                Number of output channels.
-            bottleneck_channels (`int`):
-                Number of output channels for the 3x3 "bottleneck" conv layers.
-        """
-        super().__init__()
-        self.conv1 = nn.Conv2d(in_channels, bottleneck_channels, 1, 1)
-        self.norm1 = AITVitDetLayerNorm(bottleneck_channels)
-        self.act1 = nn.activation.GELU()
-
-        self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels, 3, 1, padding=1)
-        self.norm2 = AITVitDetLayerNorm(bottleneck_channels)
-        self.act2 = nn.activation.GELU()
-
-        self.conv3 = nn.Conv2d(bottleneck_channels, out_channels, 1, 1)
-        # self.norm3 = AITVitDetLayerNorm(out_channels)
-
-    def forward(self, x):
-        out = x
-        out = ops.permute021()(ops.permute0213()(out)) # permute (B, C, H, W) -> (B, H, W, C)
-        for layer in self.children():
-            out = layer(out)
-
-        out = ops.permute0213()(ops.permute021()(out)) # permute (B, H, W, C) -> (B, C, H, W)
-        out = x + out
-        return out
-
-
-class AITVitDetAttention(nn.Module):
-    """Multi-head Attention block with relative position embeddings."""
-
-    def __init__(self, config, input_size=None):
-        """
-        Args:
-            config (`VitDetConfig`):
-                Model configuration.
-            input_size (`Tuple[int]`, *optional*):
-                Input resolution, only required in case relative position embeddings are added.
-        """
-        super().__init__()
-
-        dim = config.hidden_size
-        num_heads = config.num_attention_heads
-
-        self.num_heads = num_heads
-        head_dim = dim // num_heads
-        self.scale = head_dim**-0.5
-
-        self.qkv = nn.Linear(dim, dim * 3, bias=config.qkv_bias)
-        self.proj = nn.Linear(dim, dim)
-
-        self.use_relative_position_embeddings = config.use_relative_position_embeddings
-        if self.use_relative_position_embeddings:
-            # initialize relative positional embeddings
-            self.rel_pos_h = nn.Parameter(shape=[2 * input_size[0] - 1, head_dim])
-            self.rel_pos_w = nn.Parameter(shape=[2 * input_size[1] - 1, head_dim])
-
-    def forward(self, hidden_state):
-        batch_size, height, width, _ = hidden_state.shape()
-        # qkv with shape (3, batch_size, num_heads, height * width, num_channels)
-        qkv = self.qkv(hidden_state)
-        qkv = ops.permute()(ops.reshape()(qkv, [batch_size, height * width, 3, self.num_heads, -1]), [2, 0, 3, 1, 4])
-        # queries, keys and values have shape (batch_size * num_heads, height * width, num_channels)
-        qkv = ops.reshape()(qkv, [3, batch_size * self.num_heads, height * width, -1])
-        queries, keys, values = ops.split()(qkv, 1, dim=0)#[0], qkv[1], qkv[2]
-
-        queries, keys, values = ops.squeeze(0)(queries), ops.squeeze(0)(keys), ops.squeeze(0)(values)
-        keys = ops.permute021()(keys)
-        qk = ops.bmm_rrr()(queries, keys)
-        score = ops.elementwise(FuncEnum.MUL)(qk, self.scale)
-        score = ops.softmax()(score, -1)
-        hidden_state = ops.bmm_rrr()(score, values)
-
-        # hidden_state = attention_probs @ values
-        hidden_state = ops.reshape()(hidden_state, [batch_size, self.num_heads, height, width,  -1])
-        hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1, 4])
-        hidden_state = ops.reshape()(hidden_state, [batch_size, height, width, -1])
-        hidden_state = self.proj(hidden_state)
-
-        outputs = (hidden_state,)
-
-        return outputs
-
-def pad_tensor(hidden_state, height, patch_height, width, patch_width):
-    # Permute to move the 'height' dimension to the end
-    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
-    # Pad the last dimension (which is now the 'height' dimension)
-    hidden_state = ops.pad_last_dim(4, patch_height)(hidden_state)
-    
-    # Permute to move the 'width' dimension to the end
-    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
-    
-    # Pad the last dimension (which is now the 'width' dimension)
-    hidden_state = ops.pad_last_dim(4, patch_width)(hidden_state)
-    
-    # Permute back to the original order
-    hidden_state = ops.permute()(hidden_state, [0, 2, 3, 1])
-    
-    return hidden_state
-
-def window_partition(hidden_state, window_size):
-    """
-    Partition into non-overlapping windows with padding if needed.
-
-    Args:
-        hidden_state (`torch.Tensor`):
-            Input tokens with [batch_size, height, width, num_channels].
-        window_size (`int`):
-            Window size.
-
-    Returns:
-        `tuple(torch.FloatTensor)` comprising various elements:
-        - windows: windows after partition with [batch_size * num_windows, window_size, window_size, num_channels].
-        - (patch_height, patch_width): padded height and width before partition
-    """
-    shape = hidden_state._attrs["shape"]
-    batch_size, height, width, num_channels = shape
-    batch_size, height, width, num_channels = batch_size._attrs['values'][0], height._attrs['values'][0], width._attrs['values'][0], num_channels._attrs['values'][0]
-    # from IPython import embed; embed()
-
-    pad_height = (window_size - height % window_size) % window_size
-    pad_width = (window_size - width % window_size) % window_size
-    patch_height, patch_width = height + pad_height, width + pad_width
-    if pad_height > 0 or pad_width > 0:
-        hidden_state = pad_tensor(hidden_state, height, patch_height, width, patch_width) #ops.expand()(hidden_state, (batch_size, patch_height, patch_width, num_channels))
-    
-
-    hidden_state = ops.reshape()(hidden_state,[
-        batch_size, patch_height // window_size, window_size, patch_width // window_size, window_size, num_channels]
-    )
-    windows = ops.reshape()(ops.permute()(hidden_state, [0, 1, 3, 2, 4, 5]), [-1, window_size, window_size, num_channels])
-    return windows, (patch_height, patch_width)
-
-def window_unpartition(windows, window_size, pad_height_width, height_width):
-    """
-    Window unpartition into original sequences and removing padding.
-
-    Args:
-        windows (`torch.Tensor`):
-            Input tokens with [batch_size * num_windows, window_size, window_size, num_channels].
-        window_size (`int`):
-            Window size.
-        pad_height_width (`Tuple[int]`):
-            Padded height and width (patch_height, patch_width).
-        height_width (`Tuple[int]`):
-            Original height and width before padding.
-
-    Returns:
-        hidden_state: unpartitioned sequences with [batch_size, height, width, num_channels].
-    """
-    patch_height, patch_width = pad_height_width
-    height, width = height_width
-    height, width = height._attrs['values'][0], width._attrs['values'][0]
-
-    shape = windows._attrs["shape"]
-    batch_size, _, _, _ = shape
-    batch_size = batch_size._attrs['values'][0]
-
-    batch_size = batch_size // (patch_height * patch_width // window_size // window_size)
-    hidden_state = ops.reshape()(windows, [
-        batch_size, patch_height // window_size, patch_width // window_size, window_size, window_size, -1]
-    )
-    hidden_state = ops.reshape()(ops.permute()(hidden_state, [0, 1, 3, 2, 4, 5]), [batch_size, patch_height, patch_width, -1])
-
-    if patch_height > height or patch_width > width:
-        # hidden_state = hidden_state[:, :height, :width, :].contiguous()
-        hidden_state = ops.dynamic_slice()(
-                hidden_state,
-                start_indices=[0, 0, 0, 0],
-                end_indices=[None, height, width, None],
-            )
-    return hidden_state
-
-class AITVitDetLayer(nn.Module):
-    """This corresponds to the Block class in the original implementation."""
-
-    def __init__(
-        self, config: VitDetConfig, drop_path_rate: float = 0, window_size: int = 0, use_residual_block: bool = False
-    ) -> None:
-        super().__init__()
-
-        dim = config.hidden_size
-        input_size = (config.image_size // config.patch_size, config.image_size // config.patch_size)
-
-        self.norm1 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
-        self.attention = AITVitDetAttention(
-            config, input_size=input_size if window_size == 0 else (window_size, window_size)
-        )
-
-        self.norm2 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
-        self.mlp = AITVitDetMlp(config=config, in_features=dim, hidden_features=int(dim * config.mlp_ratio))
-
-        self.window_size = window_size
-
-        self.use_residual_block = use_residual_block
-        if self.use_residual_block:
-            # Use a residual block with bottleneck channel as dim // 2
-            self.residual = AITVitDetResBottleneckBlock(
-                config=config,
-                in_channels=dim,
-                out_channels=dim,
-                bottleneck_channels=dim // 2,
-            )
-
-    def forward(
-        self,
-        hidden_states: Tensor,
-        head_mask: Optional[Tensor] = None,
-        output_attentions: bool = False,
-    ) -> Union[Tuple[Tensor, Tensor], Tuple[Tensor]]:
-        hidden_states = ops.permute()(hidden_states, [0, 2, 3, 1])
-
-        shortcut = hidden_states
-
-        hidden_states = self.norm1(hidden_states)
-        # print(hidden_states, hidden_states.shape)
-        # Window partition
-        if self.window_size > 0:
-            shape = hidden_states._attrs["shape"]
-            height, width = shape[1], shape[2]
-            hidden_states, pad_height_width = window_partition(hidden_states, self.window_size)
-
-        self_attention_outputs = self.attention(
-            hidden_states
-        )
-        hidden_states = self_attention_outputs[0]
-
-        # Reverse window partition
-        if self.window_size > 0:
-            hidden_states = window_unpartition(hidden_states, self.window_size, pad_height_width, (height, width))
-
-        # first residual connection
-        hidden_states = shortcut + hidden_states
-
-        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
-
-        hidden_states = ops.permute()(hidden_states, [0, 3, 1, 2])
-
-        if self.use_residual_block:
-            hidden_states = self.residual(hidden_states)
-
-        outputs = (hidden_states,)
-
-        return outputs
-
-
-class AITVitDetEncoder(nn.Module):
-    def __init__(self, config: VitDetConfig) -> None:
-        super().__init__()
-        self.config = config
-        depth = config.num_hidden_layers
-
-        # stochastic depth decay rule
-        drop_path_rate = [0] * depth
-
-        layers = []
-        for i in range(depth):
-            layers.append(
-                AITVitDetLayer(
-                    config,
-                    drop_path_rate=drop_path_rate[i],
-                    window_size=config.window_size if i in config.window_block_indices else 0,
-                    use_residual_block=i in config.residual_block_indices,
-                )
-            )
-
-        self.layer = nn.ModuleList(layers)
-
-    def forward(
-        self,
-        hidden_states: Tensor,
-        head_mask: Optional[Tensor] = None,
-        output_attentions: bool = False,
-        output_hidden_states: bool = False,
-        return_dict: bool = True,
-    ) -> tuple:
-        all_hidden_states = () if output_hidden_states else None
-        all_self_attentions = () if output_attentions else None
-
-        for i, layer_module in enumerate(self.layer):
-            if output_hidden_states:
-                all_hidden_states = all_hidden_states + (hidden_states,)
-
-            layer_head_mask = head_mask[i] if head_mask is not None else None
-            
-            layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
-
-            hidden_states = layer_outputs[0]
-
-
-        if output_hidden_states:
-            all_hidden_states = all_hidden_states + (hidden_states,)
-
-        return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
-
-
-'''Not fully ported'''
-class AITVitDetBackbone():
-    def __init__(self, config):
-        super().__init__(config)
-
-        self.embeddings = VitDetEmbeddings(config)
-        self.encoder = AITVitDetEncoder(config)
-        self.num_features = [config.hidden_size for _ in range(config.num_hidden_layers + 1)]
-
-        # initialize weights and apply final processing
-        self.post_init()
-
-    def get_input_embeddings(self) -> VitDetEmbeddings:
-        return self.embeddings.projection
-
-
-    def forward(
-        self,
-        pixel_values: Tensor,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Tensor:
-        """
-        Returns:
-
-        Examples:
-
-        ```python
-        >>> from transformers import VitDetConfig, VitDetBackbone
-        >>> import torch
-
-        >>> config = VitDetConfig()
-        >>> model = VitDetBackbone(config)
-
-        >>> pixel_values = torch.randn(1, 3, 224, 224)
-
-        >>> with torch.no_grad():
-        ...     outputs = model(pixel_values)
-
-        >>> feature_maps = outputs.feature_maps
-        >>> list(feature_maps[-1].shape)
-        [1, 768, 14, 14]
-        ```"""
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-
-        embedding_output = self.embeddings(pixel_values)
-
-        outputs = self.encoder(
-            embedding_output,
-            output_hidden_states=True,
-            output_attentions=output_attentions,
-            return_dict=return_dict,
-        )
-
-        hidden_states = outputs[1]
-
-        feature_maps = ()
-        for stage, hidden_state in zip(self.stage_names, hidden_states):
-            if stage in self.out_features:
-                feature_maps += (hidden_state,)
-
-        if not return_dict:
-            if output_hidden_states:
-                output = (feature_maps,) + outputs[1:]
-            else:
-                output = (feature_maps,) + outputs[2:]
-            return output
-
-        return feature_maps

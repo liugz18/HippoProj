@@ -6,6 +6,7 @@ from aitemplate.testing import detect_target
 from aitemplate.testing.benchmark_pt import benchmark_torch_function
 from aitemplate.utils.graph_utils import sorted_graph_pseudo_code
 
+
 class PTSimpleModel(torch.nn.Module):
     def __init__(self, hidden, eps: float = 1e-5):
         super().__init__()
@@ -22,6 +23,7 @@ class PTSimpleModel(torch.nn.Module):
         hidden_states = self.layernorm(hidden_states)
         return hidden_states
 
+
 class AITSimpleModel(nn.Module):
     def __init__(self, hidden, eps: float = 1e-5):
         super().__init__()
@@ -36,6 +38,7 @@ class AITSimpleModel(nn.Module):
         hidden_states = self.layernorm(hidden_states)
         return hidden_states
 
+
 def map_pt_params(ait_model, pt_model):
     ait_model.name_parameter_tensor()
     pt_params = dict(pt_model.named_parameters())
@@ -46,16 +49,17 @@ def map_pt_params(ait_model, pt_model):
         mapped_pt_params[ait_name] = pt_params[name]
     return mapped_pt_params
 
-batch_size=1024
-hidden=512
+
+batch_size = 1024
+hidden = 512
 # create AIT model
 ait_model = AITSimpleModel(hidden)
 # create AIT input Tensor
 X = Tensor(
-      shape=[batch_size, hidden],
-      name="X",
-      dtype="float16",
-      is_input=True,
+    shape=[batch_size, hidden],
+    name="X",
+    dtype="float16",
+    is_input=True,
 )
 # run AIT module to generate output tensor
 Y = ait_model(X)
@@ -63,8 +67,8 @@ Y = ait_model(X)
 Y._attrs["is_output"] = True
 Y._attrs["name"] = "Y"
 
-batch_size=1024
-hidden=512
+batch_size = 1024
+hidden = 512
 # create pt model
 pt_model = PTSimpleModel(hidden).cuda().half()
 

@@ -59,9 +59,19 @@ class VitDetEmbeddings(nn.Module):
         image_size, patch_size = config.pretrain_image_size, config.patch_size
         num_channels, hidden_size = config.num_channels, config.hidden_size
 
-        image_size = image_size if isinstance(image_size, collections.abc.Iterable) else (image_size, image_size)
-        patch_size = patch_size if isinstance(patch_size, collections.abc.Iterable) else (patch_size, patch_size)
-        num_patches = (image_size[1] // patch_size[1]) * (image_size[0] // patch_size[0])
+        image_size = (
+            image_size
+            if isinstance(image_size, collections.abc.Iterable)
+            else (image_size, image_size)
+        )
+        patch_size = (
+            patch_size
+            if isinstance(patch_size, collections.abc.Iterable)
+            else (patch_size, patch_size)
+        )
+        num_patches = (image_size[1] // patch_size[1]) * (
+            image_size[0] // patch_size[0]
+        )
         self.image_size = image_size
         self.patch_size = patch_size
         self.num_channels = num_channels
@@ -70,11 +80,15 @@ class VitDetEmbeddings(nn.Module):
         if config.use_absolute_position_embeddings:
             # Initialize absolute positional embedding with pretrain image size.
             num_positions = num_patches + 1
-            self.position_embeddings = nn.Parameter(torch.zeros(1, num_positions, config.hidden_size))
+            self.position_embeddings = nn.Parameter(
+                torch.zeros(1, num_positions, config.hidden_size)
+            )
         else:
             self.position_embeddings = None
 
-        self.projection = nn.Conv2d(num_channels, hidden_size, kernel_size=patch_size, stride=patch_size)
+        self.projection = nn.Conv2d(
+            num_channels, hidden_size, kernel_size=patch_size, stride=patch_size
+        )
 
     def get_absolute_positions(self, abs_pos_embeddings, has_cls_token, height, width):
         """
@@ -171,7 +185,9 @@ def get_rel_pos(q_size, k_size, rel_pos):
     return rel_pos_resized[relative_coords.long()]
 
 
-def add_decomposed_relative_positions(attn, queries, rel_pos_h, rel_pos_w, q_size, k_size):
+def add_decomposed_relative_positions(
+    attn, queries, rel_pos_h, rel_pos_w, q_size, k_size
+):
     """
     Calculate decomposed Relative Positional Embeddings as introduced in
     [MViT2](https://github.com/facebookresearch/mvit/blob/19786631e330df9f3622e5402b4a419a263a2c80/mvit/models/attention.py).
@@ -244,15 +260,26 @@ class VitDetAttention(nn.Module):
     def forward(self, hidden_state, output_attentions=False):
         batch_size, height, width, _ = hidden_state.shape
         # qkv with shape (3, batch_size, num_heads, height * width, num_channels)
-        qkv = self.qkv(hidden_state).reshape(batch_size, height * width, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
+        qkv = (
+            self.qkv(hidden_state)
+            .reshape(batch_size, height * width, 3, self.num_heads, -1)
+            .permute(2, 0, 3, 1, 4)
+        )
         # queries, keys and values have shape (batch_size * num_heads, height * width, num_channels)
-        queries, keys, values = qkv.reshape(3, batch_size * self.num_heads, height * width, -1).unbind(0)
+        queries, keys, values = qkv.reshape(
+            3, batch_size * self.num_heads, height * width, -1
+        ).unbind(0)
 
         attention_scores = (queries * self.scale) @ keys.transpose(-2, -1)
 
         if self.use_relative_position_embeddings:
             attention_scores = add_decomposed_relative_positions(
-                attention_scores, queries, self.rel_pos_h, self.rel_pos_w, (height, width), (height, width)
+                attention_scores,
+                queries,
+                self.rel_pos_h,
+                self.rel_pos_w,
+                (height, width),
+                (height, width),
             )
 
         attention_probs = attention_scores.softmax(dim=-1)
@@ -265,7 +292,10 @@ class VitDetAttention(nn.Module):
 
         if output_attentions:
             attention_probs = attention_probs.reshape(
-                batch_size, self.num_heads, attention_probs.shape[-2], attention_probs.shape[-1]
+                batch_size,
+                self.num_heads,
+                attention_probs.shape[-2],
+                attention_probs.shape[-1],
             )
             outputs = (hidden_state, attention_probs)
         else:
@@ -275,7 +305,9 @@ class VitDetAttention(nn.Module):
 
 
 # Copied from transformers.models.beit.modeling_beit.drop_path
-def drop_path(input: torch.Tensor, drop_prob: float = 0.0, training: bool = False) -> torch.Tensor:
+def drop_path(
+    input: torch.Tensor, drop_prob: float = 0.0, training: bool = False
+) -> torch.Tensor:
     """
     Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks).
 
@@ -288,8 +320,12 @@ def drop_path(input: torch.Tensor, drop_prob: float = 0.0, training: bool = Fals
     if drop_prob == 0.0 or not training:
         return input
     keep_prob = 1 - drop_prob
-    shape = (input.shape[0],) + (1,) * (input.ndim - 1)  # work with diff dim tensors, not just 2D ConvNets
-    random_tensor = keep_prob + torch.rand(shape, dtype=input.dtype, device=input.device)
+    shape = (input.shape[0],) + (1,) * (
+        input.ndim - 1
+    )  # work with diff dim tensors, not just 2D ConvNets
+    random_tensor = keep_prob + torch.rand(
+        shape, dtype=input.dtype, device=input.device
+    )
     random_tensor.floor_()  # binarize
     output = input.div(keep_prob) * random_tensor
     return output
@@ -298,7 +334,7 @@ def drop_path(input: torch.Tensor, drop_prob: float = 0.0, training: bool = Fals
 # Copied from transformers.models.beit.modeling_beit.BeitDropPath
 class VitDetDropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample (when applied in main path of residual blocks)."""
- 
+
     def __init__(self, drop_prob: Optional[float] = None) -> None:
         super().__init__()
         self.drop_prob = drop_prob
@@ -355,7 +391,9 @@ class VitDetResBottleneckBlock(nn.Module):
         self.norm1 = VitDetLayerNorm(bottleneck_channels)
         self.act1 = ACT2FN[config.hidden_act]
 
-        self.conv2 = nn.Conv2d(bottleneck_channels, bottleneck_channels, 3, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(
+            bottleneck_channels, bottleneck_channels, 3, padding=1, bias=False
+        )
         self.norm2 = VitDetLayerNorm(bottleneck_channels)
         self.act2 = ACT2FN[config.hidden_act]
 
@@ -409,13 +447,24 @@ def window_partition(hidden_state, window_size):
     pad_height = (window_size - height % window_size) % window_size
     pad_width = (window_size - width % window_size) % window_size
     if pad_height > 0 or pad_width > 0:
-        hidden_state = nn.functional.pad(hidden_state, (0, 0, 0, pad_width, 0, pad_height))
+        hidden_state = nn.functional.pad(
+            hidden_state, (0, 0, 0, pad_width, 0, pad_height)
+        )
     patch_height, patch_width = height + pad_height, width + pad_width
 
     hidden_state = hidden_state.view(
-        batch_size, patch_height // window_size, window_size, patch_width // window_size, window_size, num_channels
+        batch_size,
+        patch_height // window_size,
+        window_size,
+        patch_width // window_size,
+        window_size,
+        num_channels,
     )
-    windows = hidden_state.permute(0, 1, 3, 2, 4, 5).contiguous().view(-1, window_size, window_size, num_channels)
+    windows = (
+        hidden_state.permute(0, 1, 3, 2, 4, 5)
+        .contiguous()
+        .view(-1, window_size, window_size, num_channels)
+    )
     return windows, (patch_height, patch_width)
 
 
@@ -438,11 +487,22 @@ def window_unpartition(windows, window_size, pad_height_width, height_width):
     """
     patch_height, patch_width = pad_height_width
     height, width = height_width
-    batch_size = windows.shape[0] // (patch_height * patch_width // window_size // window_size)
-    hidden_state = windows.view(
-        batch_size, patch_height // window_size, patch_width // window_size, window_size, window_size, -1
+    batch_size = windows.shape[0] // (
+        patch_height * patch_width // window_size // window_size
     )
-    hidden_state = hidden_state.permute(0, 1, 3, 2, 4, 5).contiguous().view(batch_size, patch_height, patch_width, -1)
+    hidden_state = windows.view(
+        batch_size,
+        patch_height // window_size,
+        patch_width // window_size,
+        window_size,
+        window_size,
+        -1,
+    )
+    hidden_state = (
+        hidden_state.permute(0, 1, 3, 2, 4, 5)
+        .contiguous()
+        .view(batch_size, patch_height, patch_width, -1)
+    )
 
     if patch_height > height or patch_width > width:
         hidden_state = hidden_state[:, :height, :width, :].contiguous()
@@ -453,21 +513,33 @@ class VitDetLayer(nn.Module):
     """This corresponds to the Block class in the original implementation."""
 
     def __init__(
-        self, config: VitDetConfig, drop_path_rate: float = 0, window_size: int = 0, use_residual_block: bool = False
+        self,
+        config: VitDetConfig,
+        drop_path_rate: float = 0,
+        window_size: int = 0,
+        use_residual_block: bool = False,
     ) -> None:
         super().__init__()
 
         dim = config.hidden_size
-        input_size = (config.image_size // config.patch_size, config.image_size // config.patch_size)
+        input_size = (
+            config.image_size // config.patch_size,
+            config.image_size // config.patch_size,
+        )
 
         self.norm1 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
         self.attention = VitDetAttention(
-            config, input_size=input_size if window_size == 0 else (window_size, window_size)
+            config,
+            input_size=input_size if window_size == 0 else (window_size, window_size),
         )
 
-        self.drop_path = VitDetDropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
+        self.drop_path = (
+            VitDetDropPath(drop_path_rate) if drop_path_rate > 0.0 else nn.Identity()
+        )
         self.norm2 = nn.LayerNorm(dim, eps=config.layer_norm_eps)
-        self.mlp = VitDetMlp(config=config, in_features=dim, hidden_features=int(dim * config.mlp_ratio))
+        self.mlp = VitDetMlp(
+            config=config, in_features=dim, hidden_features=int(dim * config.mlp_ratio)
+        )
 
         self.window_size = window_size
 
@@ -496,23 +568,31 @@ class VitDetLayer(nn.Module):
         # Window partition
         if self.window_size > 0:
             height, width = hidden_states.shape[1], hidden_states.shape[2]
-            hidden_states, pad_height_width = window_partition(hidden_states, self.window_size)
+            hidden_states, pad_height_width = window_partition(
+                hidden_states, self.window_size
+            )
 
         self_attention_outputs = self.attention(
             hidden_states,
             output_attentions=output_attentions,
         )
         hidden_states = self_attention_outputs[0]
-        outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+        outputs = self_attention_outputs[
+            1:
+        ]  # add self attentions if we output attention weights
 
         # Reverse window partition
         if self.window_size > 0:
-            hidden_states = window_unpartition(hidden_states, self.window_size, pad_height_width, (height, width))
+            hidden_states = window_unpartition(
+                hidden_states, self.window_size, pad_height_width, (height, width)
+            )
 
         # first residual connection
         hidden_states = shortcut + self.drop_path(hidden_states)
 
-        hidden_states = hidden_states + self.drop_path(self.mlp(self.norm2(hidden_states)))
+        hidden_states = hidden_states + self.drop_path(
+            self.mlp(self.norm2(hidden_states))
+        )
 
         hidden_states = hidden_states.permute(0, 3, 1, 2)
 
@@ -531,7 +611,9 @@ class VitDetEncoder(nn.Module):
         depth = config.num_hidden_layers
 
         # stochastic depth decay rule
-        drop_path_rate = [x.item() for x in torch.linspace(0, config.drop_path_rate, depth)]
+        drop_path_rate = [
+            x.item() for x in torch.linspace(0, config.drop_path_rate, depth)
+        ]
 
         layers = []
         for i in range(depth):
@@ -539,7 +621,9 @@ class VitDetEncoder(nn.Module):
                 VitDetLayer(
                     config,
                     drop_path_rate=drop_path_rate[i],
-                    window_size=config.window_size if i in config.window_block_indices else 0,
+                    window_size=config.window_size
+                    if i in config.window_block_indices
+                    else 0,
                     use_residual_block=i in config.residual_block_indices,
                 )
             )
@@ -578,7 +662,9 @@ class VitDetEncoder(nn.Module):
                     layer_head_mask,
                 )
             else:
-                layer_outputs = layer_module(hidden_states, layer_head_mask, output_attentions)
+                layer_outputs = layer_module(
+                    hidden_states, layer_head_mask, output_attentions
+                )
 
             hidden_states = layer_outputs[0]
 
@@ -589,7 +675,11 @@ class VitDetEncoder(nn.Module):
             all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
-            return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+            return tuple(
+                v
+                for v in [hidden_states, all_hidden_states, all_self_attentions]
+                if v is not None
+            )
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
@@ -629,7 +719,9 @@ class VitDetPreTrainedModel(PreTrainedModel):
             # Upcast the input in `fp32` and cast it back to desired `dtype` to avoid
             # `trunc_normal_cpu` not implemented in `half` issues
             module.weight.data = nn.init.trunc_normal_(
-                module.weight.data.to(torch.float32), mean=0.0, std=self.config.initializer_range
+                module.weight.data.to(torch.float32),
+                mean=0.0,
+                std=self.config.initializer_range,
             ).to(module.weight.dtype)
             if module.bias is not None:
                 module.bias.data.zero_()
@@ -644,7 +736,10 @@ class VitDetPreTrainedModel(PreTrainedModel):
                 std=self.config.initializer_range,
             ).to(module.position_embeddings.dtype)
 
-        elif isinstance(module, VitDetAttention) and self.config.use_relative_position_embeddings:
+        elif (
+            isinstance(module, VitDetAttention)
+            and self.config.use_relative_position_embeddings
+        ):
             module.rel_pos_h.data = nn.init.trunc_normal_(
                 module.rel_pos_h.data.to(torch.float32),
                 mean=0.0,
@@ -666,7 +761,9 @@ class VitDetPreTrainedModel(PreTrainedModel):
             module.norm3.weight.data.zero_()
             module.norm3.bias.data.zero_()
 
-    def _set_gradient_checkpointing(self, module: VitDetEncoder, value: bool = False) -> None:
+    def _set_gradient_checkpointing(
+        self, module: VitDetEncoder, value: bool = False
+    ) -> None:
         if isinstance(module, VitDetEncoder):
             module.gradient_checkpointing = value
 
@@ -732,7 +829,9 @@ class VitDetModel(VitDetPreTrainedModel):
             self.encoder.layer[layer].attention.prune_heads(heads)
 
     @add_start_docstrings_to_model_forward(VITDET_INPUTS_DOCSTRING)
-    @replace_return_docstrings(output_type=BaseModelOutput, config_class=_CONFIG_FOR_DOC)
+    @replace_return_docstrings(
+        output_type=BaseModelOutput, config_class=_CONFIG_FOR_DOC
+    )
     def forward(
         self,
         pixel_values: Optional[torch.Tensor] = None,
@@ -762,11 +861,19 @@ class VitDetModel(VitDetPreTrainedModel):
         >>> list(last_hidden_states.shape)
         [1, 768, 14, 14]
         ```"""
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
         )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
 
         if pixel_values is None:
             raise ValueError("You have to specify pixel_values")
@@ -812,7 +919,9 @@ class VitDetBackbone(VitDetPreTrainedModel, BackboneMixin):
 
         self.embeddings = VitDetEmbeddings(config)
         self.encoder = VitDetEncoder(config)
-        self.num_features = [config.hidden_size for _ in range(config.num_hidden_layers + 1)]
+        self.num_features = [
+            config.hidden_size for _ in range(config.num_hidden_layers + 1)
+        ]
 
         # initialize weights and apply final processing
         self.post_init()
@@ -850,11 +959,19 @@ class VitDetBackbone(VitDetPreTrainedModel, BackboneMixin):
         >>> list(feature_maps[-1].shape)
         [1, 768, 14, 14]
         ```"""
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
         )
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
 
         embedding_output = self.embeddings(pixel_values)
 

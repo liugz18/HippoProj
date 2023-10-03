@@ -10,6 +10,7 @@ from collections import OrderedDict
 from model.ait_vitmatte import AITVitMatteFusionBlock, AITVitMatteConfig
 from model.pt_vitmatte import *
 
+
 def mark_output(y):
     outputs = ()
     if type(y) != tuple:
@@ -25,13 +26,12 @@ def mark_output(y):
 
 def map_pt_params(ait_model, pt_model):
     pt_params = dict(pt_model.named_parameters())
-    
 
     # Add the missing batch_norm statistics to pt_params
     for name, _ in ait_model.named_parameters():
         # print(name, name not in pt_params, "batch_norm" in name)
         if name not in pt_params and "batch_norm" in name:
-            attr_sequence = name.split('.')
+            attr_sequence = name.split(".")
             param_value = pt_model
             for attr in attr_sequence:
                 param_value = getattr(param_value, attr)
@@ -43,10 +43,10 @@ def map_pt_params(ait_model, pt_model):
     mapped_pt_params = OrderedDict()
     for name, _ in ait_model.named_parameters():
         ait_name = name.replace(".", "_")
-        
+
         assert name in pt_params, f"{name} {pt_params.keys()}"
         params = pt_params[name]
-        
+
         if len(params.shape) == 4:
             # NCHW->NHWC
             params = params.permute((0, 2, 3, 1)).contiguous()
@@ -56,9 +56,7 @@ def map_pt_params(ait_model, pt_model):
     return mapped_pt_params
 
 
-
 def compile(ait_model, shape_1, shape_2, weights):
-    
     ait_model.name_parameter_tensor()
     # create AIT input Tensor
     X1 = Tensor(
@@ -77,16 +75,15 @@ def compile(ait_model, shape_1, shape_2, weights):
     Y = ait_model(X1, X2)
     # mark the output tensor
     outputs = mark_output(Y)
-    module = compile_model(
-    Y, target, "./tmp", "VitMatteConvStream", constants=weights
-) 
+    module = compile_model(Y, target, "./tmp", "VitMatteConvStream", constants=weights)
     # y = torch.empty(shape_after).cuda().half()
 
     return module, outputs
 
+
 mock_config = AITVitMatteConfig
 # create pt input
-batch_size=1
+batch_size = 1
 in_channels = 576
 out_channels = 256
 shape_1 = [batch_size, 384, 40, 60]
@@ -106,11 +103,10 @@ weights = map_pt_params(ait_model, pt_model)
 module, outputs = compile(ait_model, shape_1, shape_2, weights)
 
 
-
-
-
 # Relative path to the .pt file
-tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'features.pt')
+tensor_path = os.path.join(
+    os.path.dirname(__file__), "..", "saved_tensors", "features.pt"
+)
 
 # Load the tensor
 x1 = torch.load(tensor_path)
@@ -119,7 +115,9 @@ x1 = torch.load(tensor_path)
 x1 = x1.cuda().half()
 
 # Relative path to the .pt file
-tensor_path = os.path.join(os.path.dirname(__file__), '..', 'saved_tensors', 'detailed_feature_map_3.pt')
+tensor_path = os.path.join(
+    os.path.dirname(__file__), "..", "saved_tensors", "detailed_feature_map_3.pt"
+)
 
 # Load the tensor
 x2 = torch.load(tensor_path)
@@ -132,11 +130,6 @@ pt_model.eval()
 y_pt = pt_model(x1, x2)
 
 
-
-
-
-
-
 # inputs and outputs dict
 inputs = {"X1": x1, "X2": x2}
 # run
@@ -147,7 +140,7 @@ print(len(outputs), len(y_pt))
 for y, y_pt in zip(outputs, y_pt):
     print((y - y_pt).max())
     print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
-    
+
 
 # benchmark ait and pt
 count = 1000

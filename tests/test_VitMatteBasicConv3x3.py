@@ -10,12 +10,14 @@ from model.ait_vitmatte import AITVitMatteBasicConv3x3
 from model.pt_vitmatte import *
 
 
-def map_pt_params(ait_model:nn.Module, pt_model):
+def map_pt_params(ait_model: nn.Module, pt_model):
     pt_params = dict(pt_model.named_parameters())
     # from IPython import embed; embed()
-    pt_params['batch_norm.running_mean'] = pt_model.batch_norm.running_mean.clone()
-    pt_params['batch_norm.running_var'] = pt_model.batch_norm.running_var.clone()
-    pt_params['batch_norm.num_batches_tracked'] = pt_model.batch_norm.num_batches_tracked.clone()
+    pt_params["batch_norm.running_mean"] = pt_model.batch_norm.running_mean.clone()
+    pt_params["batch_norm.running_var"] = pt_model.batch_norm.running_var.clone()
+    pt_params[
+        "batch_norm.num_batches_tracked"
+    ] = pt_model.batch_norm.num_batches_tracked.clone()
     mapped_pt_params = OrderedDict()
     for name, _ in ait_model.named_parameters():
         ait_name = name.replace(".", "_")
@@ -30,29 +32,33 @@ def map_pt_params(ait_model:nn.Module, pt_model):
         mapped_pt_params[ait_name] = params
     return mapped_pt_params
 
+
 class MockConfig:
     def __init__(self) -> None:
         self.dropout_prob = 0.1
         self.hidden_act = "gelu"
         self.batch_norm_eps = 1e-6
 
-batch_size=1
-hidden=128
-in_channels=32
-out_channels=16
+
+batch_size = 1
+hidden = 128
+in_channels = 32
+out_channels = 16
 shape_pt = [batch_size, in_channels, hidden, hidden]
-shape_after = [batch_size, out_channels, hidden//2, hidden//2]
+shape_after = [batch_size, out_channels, hidden // 2, hidden // 2]
 shape = [batch_size, hidden, hidden, 4]
 mock_config = MockConfig()
 # create AIT model
-ait_model = AITVitMatteBasicConv3x3(mock_config, in_channels=in_channels, out_channels=out_channels, stride=2, padding=1)
+ait_model = AITVitMatteBasicConv3x3(
+    mock_config, in_channels=in_channels, out_channels=out_channels, stride=2, padding=1
+)
 ait_model.name_parameter_tensor()
 # create AIT input Tensor
 X = Tensor(
-      shape=shape_pt,
-      name="X",
-      dtype="float16",
-      is_input=True,
+    shape=shape_pt,
+    name="X",
+    dtype="float16",
+    is_input=True,
 )
 # run AIT module to generate output tensor
 Y = ait_model(X)
@@ -61,9 +67,18 @@ Y._attrs["is_output"] = True
 Y._attrs["name"] = "Y"
 
 
-
 # create pt model
-pt_model = VitMatteBasicConv3x3(mock_config, in_channels=in_channels, out_channels=out_channels, stride=2, padding=1).cuda().half()
+pt_model = (
+    VitMatteBasicConv3x3(
+        mock_config,
+        in_channels=in_channels,
+        out_channels=out_channels,
+        stride=2,
+        padding=1,
+    )
+    .cuda()
+    .half()
+)
 
 # create pt input
 x = torch.randn(shape_pt).cuda().half()
@@ -79,9 +94,7 @@ weights = map_pt_params(ait_model, pt_model)
 target = detect_target()
 
 
-module = compile_model(
-    Y, target, "./tmp", "VitMatteBasicConv3x3", constants=weights
-) 
+module = compile_model(Y, target, "./tmp", "VitMatteBasicConv3x3", constants=weights)
 
 y = torch.empty(shape_after).cuda().half()
 
@@ -93,7 +106,7 @@ outputs = {"Y": y}
 module.run_with_tensors(inputs, outputs, graph_mode=True)
 
 # verify output is correct
-print(y - y_pt, (y-y_pt).max())
+print(y - y_pt, (y - y_pt).max())
 print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
 
 # benchmark ait and pt

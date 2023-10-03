@@ -11,7 +11,6 @@ from model.pt_vitdet import *
 
 
 class GeluActivation(ann.Module):
-
     def __init__(self):
         super().__init__()
         self.mod = ann.activation.GELU()
@@ -20,13 +19,12 @@ class GeluActivation(ann.Module):
         x = self.mod(x)
         return x
 
-class PtGeluActivation(torch.nn.Module):
 
+class PtGeluActivation(torch.nn.Module):
     def __init__(self, config):
         super().__init__()
 
         self.act1 = ACT2FN[config.hidden_act]
-
 
     def forward(self, x):
         out = x
@@ -45,14 +43,15 @@ def map_pt_params(ait_model, pt_model):
         mapped_pt_params[ait_name] = pt_params[name]
     return mapped_pt_params
 
+
 class MockConfig:
     def __init__(self) -> None:
         self.dropout_prob = 0.1
         self.hidden_act = "gelu"
 
 
-batch_size=1
-hidden=10
+batch_size = 1
+hidden = 10
 # shape = [batch_size, 3, hidden, hidden]
 shape = [batch_size, hidden, hidden, 3]
 shape_pt = [batch_size, 3, hidden, hidden]
@@ -62,17 +61,16 @@ ait_model = GeluActivation()
 ait_model.name_parameter_tensor()
 # create AIT input Tensor
 X = Tensor(
-      shape=shape,
-      name="X",
-      dtype="float16",
-      is_input=True,
+    shape=shape,
+    name="X",
+    dtype="float16",
+    is_input=True,
 )
 # run AIT module to generate output tensor
 Y = ait_model(X)
 # mark the output tensor
 Y._attrs["is_output"] = True
 Y._attrs["name"] = "Y"
-
 
 
 # create pt model
@@ -92,9 +90,7 @@ weights = map_pt_params(ait_model, pt_model)
 # codegen
 target = detect_target()
 
-module = compile_model(
-    Y, target, "./tmp", "GeluActivation"
-) 
+module = compile_model(Y, target, "./tmp", "GeluActivation")
 
 y = torch.empty(shape).cuda().half()
 

@@ -4,15 +4,21 @@ import torch
 from PIL import Image
 from huggingface_hub import hf_hub_download
 
-processor = VitMatteImageProcessor.from_pretrained("hustvl/vitmatte-small-composition-1k")
+processor = VitMatteImageProcessor.from_pretrained(
+    "hustvl/vitmatte-small-composition-1k"
+)
 model = VitMatteForImageMatting.from_pretrained("hustvl/vitmatte-small-composition-1k")
 
 filepath = hf_hub_download(
-    repo_id="hf-internal-testing/image-matting-fixtures", filename="image.png", repo_type="dataset"
+    repo_id="hf-internal-testing/image-matting-fixtures",
+    filename="image.png",
+    repo_type="dataset",
 )
 image = Image.open(filepath).convert("RGB")
 filepath = hf_hub_download(
-    repo_id="hf-internal-testing/image-matting-fixtures", filename="trimap.png", repo_type="dataset"
+    repo_id="hf-internal-testing/image-matting-fixtures",
+    filename="trimap.png",
+    repo_type="dataset",
 )
 trimap = Image.open(filepath).convert("L")
 

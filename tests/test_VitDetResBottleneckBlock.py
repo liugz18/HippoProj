@@ -10,7 +10,7 @@ from model.ait_vitdet import AITVitDetResBottleneckBlock
 from model.pt_vitdet import *
 
 
-def map_pt_params(ait_model:nn.Module, pt_model):
+def map_pt_params(ait_model: nn.Module, pt_model):
     pt_params = dict(pt_model.named_parameters())
     mapped_pt_params = OrderedDict()
     for name, _ in ait_model.named_parameters():
@@ -26,13 +26,15 @@ def map_pt_params(ait_model:nn.Module, pt_model):
         mapped_pt_params[ait_name] = params
     return mapped_pt_params
 
+
 class MockConfig:
     def __init__(self) -> None:
         self.dropout_prob = 0.1
         self.hidden_act = "gelu"
 
-batch_size=1
-hidden=128
+
+batch_size = 1
+hidden = 128
 shape_pt = [batch_size, 4, hidden, hidden]
 shape = [batch_size, hidden, hidden, 4]
 mock_config = MockConfig()
@@ -41,17 +43,16 @@ ait_model = AITVitDetResBottleneckBlock(None, 4, 4, 6)
 ait_model.name_parameter_tensor()
 # create AIT input Tensor
 X = Tensor(
-      shape=shape_pt,
-      name="X",
-      dtype="float16",
-      is_input=True,
+    shape=shape_pt,
+    name="X",
+    dtype="float16",
+    is_input=True,
 )
 # run AIT module to generate output tensor
 Y = ait_model(X)
 # mark the output tensor
 Y._attrs["is_output"] = True
 Y._attrs["name"] = "Y"
-
 
 
 # create pt model
@@ -73,7 +74,7 @@ target = detect_target()
 
 module = compile_model(
     Y, target, "./tmp", "AITVitDetResBottleneckBlock", constants=weights
-) 
+)
 
 y = torch.empty(shape_pt).cuda().half()
 
@@ -85,7 +86,7 @@ outputs = {"Y": y}
 module.run_with_tensors(inputs, outputs, graph_mode=True)
 
 # verify output is correct
-print(y - y_pt, (y-y_pt).max())
+print(y - y_pt, (y - y_pt).max())
 print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
 
 # benchmark ait and pt

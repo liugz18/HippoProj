@@ -22,13 +22,16 @@ def mark_output(y):
 
 def map_pt_params(ait_model, pt_model):
     pt_params = dict(pt_model.named_parameters())
-    
 
     # Add the missing batch_norm statistics to pt_params
     for name, _ in ait_model.named_parameters():
         # print(name, name not in pt_params, "batch_norm" in name)
-        if name not in pt_params and ("running_mean" in name or "running_var" in name or "num_batches_tracked" in name):
-            attr_sequence = name.split('.')
+        if name not in pt_params and (
+            "running_mean" in name
+            or "running_var" in name
+            or "num_batches_tracked" in name
+        ):
+            attr_sequence = name.split(".")
             param_value = pt_model
             for attr in attr_sequence:
                 param_value = getattr(param_value, attr)
@@ -39,9 +42,8 @@ def map_pt_params(ait_model, pt_model):
 
     mapped_pt_params = OrderedDict()
     for name, _ in ait_model.named_parameters():
-        
         ait_name = name.replace(".", "_")
-        
+
         assert name in pt_params, f"{name} {pt_params.keys()}"
         params = pt_params[name]
         print(name, params.shape)
@@ -54,9 +56,8 @@ def map_pt_params(ait_model, pt_model):
     return mapped_pt_params
 
 
-
-batch_size=1
-hidden=640
+batch_size = 1
+hidden = 640
 shape_pt = [batch_size, 32, hidden, hidden]
 mock_config = AITVitMatteConfig
 # create AIT model
@@ -78,10 +79,10 @@ weights = map_pt_params(ait_model, pt_model)
 
 # create AIT input Tensor
 X = Tensor(
-      shape=shape_pt,
-      name="X",
-      dtype="float16",
-      is_input=True,
+    shape=shape_pt,
+    name="X",
+    dtype="float16",
+    is_input=True,
 )
 # run AIT module to generate output tensor
 Y = ait_model(X)
@@ -90,16 +91,11 @@ Y = ait_model(X)
 outputs = mark_output(Y)
 
 
-
-
-
 # codegen
 target = detect_target()
 
 
-module = compile_model(
-    Y, target, "./tmp", "AITVitMatteHead", constants=weights
-) 
+module = compile_model(Y, target, "./tmp", "AITVitMatteHead", constants=weights)
 
 
 # inputs and outputs dict
@@ -110,7 +106,7 @@ module.run_with_tensors(inputs, outputs, graph_mode=True)
 
 # verify output is correct
 y = outputs[0]
-print(y - y_pt, (y-y_pt).max())
+print(y - y_pt, (y - y_pt).max())
 print(torch.allclose(y, y_pt, atol=1e-2, rtol=1e-2))
 
 # benchmark ait and pt
@@ -122,6 +118,3 @@ print(f"AITemplate time: {ait_t} ms/iter")
 
 pt_t = benchmark_torch_function(count, pt_model.forward, x)
 print(f"PyTorch eager time: {pt_t} ms/iter")
-
-
-

@@ -156,10 +156,14 @@ class VitMatteFusionBlock(tnn.Module):
 
     def __init__(self, config, in_channels, out_channels):
         super().__init__()
-        self.conv = VitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
+        self.conv = VitMatteBasicConv3x3(
+            config, in_channels, out_channels, stride=1, padding=1
+        )
 
     def forward(self, features, detailed_feature_map):
-        upscaled_features = tnn.functional.interpolate(features, scale_factor=2, mode="bilinear", align_corners=False)
+        upscaled_features = tnn.functional.interpolate(
+            features, scale_factor=2, mode="bilinear", align_corners=False
+        )
         out = torch.cat([detailed_feature_map, upscaled_features], dim=1)
         out = self.conv(out)
 
@@ -223,8 +227,12 @@ class VitMatteDetailCaptureModule(tnn.Module):
     def forward(self, features, pixel_values):
         detail_features = self.convstream(pixel_values)
         for i in range(len(self.fusion_blocks)):
-            detailed_feature_map_name = "detailed_feature_map_" + str(len(self.fusion_blocks) - i - 1)
-            features = self.fusion_blocks[i](features, detail_features[detailed_feature_map_name])
+            detailed_feature_map_name = "detailed_feature_map_" + str(
+                len(self.fusion_blocks) - i - 1
+            )
+            features = self.fusion_blocks[i](
+                features, detail_features[detailed_feature_map_name]
+            )
 
         alphas = torch.sigmoid(self.matting_head(features))
 
@@ -268,14 +276,20 @@ class VitMatteForImageMatting(VitMattePreTrainedModel):
 
         print("backbone name", config.backbone_config)
 
-        self.backbone = VitDetBackbone(config.backbone_config) #AutoBackbone.from_config(config.backbone_config)
+        self.backbone = VitDetBackbone(
+            config.backbone_config
+        )  # AutoBackbone.from_config(config.backbone_config)
         self.decoder = VitMatteDetailCaptureModule(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
-    @add_start_docstrings_to_model_forward(VITMATTE_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
-    @replace_return_docstrings(output_type=ImageMattingOutput, config_class=_CONFIG_FOR_DOC)
+    @add_start_docstrings_to_model_forward(
+        VITMATTE_INPUTS_DOCSTRING.format("batch_size, sequence_length")
+    )
+    @replace_return_docstrings(
+        output_type=ImageMattingOutput, config_class=_CONFIG_FOR_DOC
+    )
     def forward(
         self,
         pixel_values: Optional[torch.Tensor] = None,
@@ -318,11 +332,19 @@ class VitMatteForImageMatting(VitMattePreTrainedModel):
         >>> print(alphas.shape)
         torch.Size([1, 1, 640, 960])
         ```"""
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
         )
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states
+            if output_hidden_states is not None
+            else self.config.output_hidden_states
+        )
+        output_attentions = (
+            output_attentions
+            if output_attentions is not None
+            else self.config.output_attentions
+        )
 
         # outputs = self.backbone.forward_with_filtered_kwargs(
         #     pixel_values, output_hidden_states=output_hidden_states, output_attentions=output_attentions

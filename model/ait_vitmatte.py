@@ -49,59 +49,30 @@ VITMATTE_PRETRAINED_MODEL_ARCHIVE_LIST = [
 # General docstring
 # _CONFIG_FOR_DOC = "AITVitMatteConfig"
 configs = {
-  "_commit_hash": "03f5646d1ed954c462f3837123fba723dfd1b3d5",
-  "_name_or_path": "hustvl/vitmatte-small-composition-1k",
-  "architectures": [
-    "VitMatteForImageMatting"
-  ],
-  "backbone_config": {
+    "_commit_hash": "03f5646d1ed954c462f3837123fba723dfd1b3d5",
+    "_name_or_path": "hustvl/vitmatte-small-composition-1k",
+    "architectures": ["VitMatteForImageMatting"],
+    "backbone_config": {
+        "hidden_size": 384,
+        "image_size": 512,
+        "model_type": "vitdet",
+        "num_attention_heads": 6,
+        "num_channels": 4,
+        "out_features": ["stage12"],
+        "out_indices": [12],
+        "residual_block_indices": [2, 5, 8, 11],
+        "use_relative_position_embeddings": True,
+        "window_block_indices": [0, 1, 3, 4, 6, 7, 9, 10],
+        "window_size": 14,
+    },
+    "batch_norm_eps": 1e-05,
+    "convstream_hidden_sizes": [48, 96, 192],
+    "fusion_hidden_sizes": [256, 128, 64, 32],
     "hidden_size": 384,
-    "image_size": 512,
-    "model_type": "vitdet",
-    "num_attention_heads": 6,
-    "num_channels": 4,
-    "out_features": [
-      "stage12"
-    ],
-    "out_indices": [
-      12
-    ],
-    "residual_block_indices": [
-      2,
-      5,
-      8,
-      11
-    ],
-    "use_relative_position_embeddings": True,
-    "window_block_indices": [
-      0,
-      1,
-      3,
-      4,
-      6,
-      7,
-      9,
-      10
-    ],
-    "window_size": 14
-  },
-  "batch_norm_eps": 1e-05,
-  "convstream_hidden_sizes": [
-    48,
-    96,
-    192
-  ],
-  "fusion_hidden_sizes": [
-    256,
-    128,
-    64,
-    32
-  ],
-  "hidden_size": 384,
-  "initializer_range": 0.02,
-  "model_type": "vitmatte",
-  "torch_dtype": "float32",
-#   "transformers_version": null
+    "initializer_range": 0.02,
+    "model_type": "vitmatte",
+    "torch_dtype": "float32",
+    #   "transformers_version": null
 }
 AITVitMatteConfig = VitMatteConfig(**configs)
 
@@ -155,10 +126,10 @@ class ImageMattingOutput(ModelOutput):
 #             module.gradient_checkpointing = value
 
 
-
 class RELU(nn.Module):
-
-    def __init__(self, ):
+    def __init__(
+        self,
+    ):
         super().__init__()
 
     def forward(self, *args):
@@ -167,9 +138,11 @@ class RELU(nn.Module):
         result = elementwise(FuncEnum.RELU)(input_val)
         return result
 
-class SIGMOID(nn.Module):
 
-    def __init__(self, ):
+class SIGMOID(nn.Module):
+    def __init__(
+        self,
+    ):
         super().__init__()
 
     def forward(self, *args):
@@ -177,6 +150,7 @@ class SIGMOID(nn.Module):
         input_val = args[0]
         result = elementwise(FuncEnum.SIGMOID)(input_val)
         return result
+
 
 class AITVitMatteBasicConv3x3(nn.Module):
     """
@@ -192,7 +166,9 @@ class AITVitMatteBasicConv3x3(nn.Module):
             stride=stride,
             padding=padding,
         )
-        self.batch_norm = nn.batch_norm.BatchNorm2d(out_channels, eps=config.batch_norm_eps)
+        self.batch_norm = nn.batch_norm.BatchNorm2d(
+            out_channels, eps=config.batch_norm_eps
+        )
         self.relu = RELU()
 
     def forward(self, hidden_state):
@@ -215,9 +191,8 @@ class AITVitMatteConvStream(nn.Module):
         in_channels = config.backbone_config.num_channels
         out_channels = config.convstream_hidden_sizes
 
-        self.convs = []#nn.ModuleList()
+        self.convs = []  # nn.ModuleList()
         self.conv_chans = [in_channels] + out_channels
-
 
         for i in range(len(self.conv_chans) - 1):
             in_chan_ = self.conv_chans[i]
@@ -228,16 +203,14 @@ class AITVitMatteConvStream(nn.Module):
     def forward(self, pixel_values):
         # Start with the original pixel_values
         embeddings = ops.identity()(pixel_values)
-        embeddings_list = (embeddings, )
+        embeddings_list = (embeddings,)
         for i in range(len(self.convs)):
             embeddings = self.convs[i](embeddings)
-            embeddings_list += (embeddings, )
+            embeddings_list += (embeddings,)
 
-        # Concatenate all embeddings along the 0th dimension
-        # out_tensor = ops.concatenate()(embeddings_list, dim=0)
+
 
         return embeddings_list
-
 
 
 class AITVitMatteFusionBlock(nn.Module):
@@ -247,7 +220,9 @@ class AITVitMatteFusionBlock(nn.Module):
 
     def __init__(self, config, in_channels, out_channels):
         super().__init__()
-        self.conv = AITVitMatteBasicConv3x3(config, in_channels, out_channels, stride=1, padding=1)
+        self.conv = AITVitMatteBasicConv3x3(
+            config, in_channels, out_channels, stride=1, padding=1
+        )
         # print(in_channels, out_channels)
 
     def forward(self, features, detailed_feature_map):
@@ -259,7 +234,6 @@ class AITVitMatteFusionBlock(nn.Module):
         # print(self.conv)
         out = ops.permute0213()(ops.permute021()(out))
         out = self.conv(out)
-        
 
         return out
 
@@ -276,7 +250,9 @@ class AITVitMatteHead(nn.Module):
         mid_channels = 16
 
         self.matting_convs = nn.Sequential(
-            nn.Conv2dBias(in_channels, mid_channels, kernel_size=3, stride=1, padding=1),
+            nn.Conv2dBias(
+                in_channels, mid_channels, kernel_size=3, stride=1, padding=1
+            ),
             nn.batch_norm.BatchNorm2d(mid_channels),
             RELU(),
             nn.Conv2dBias(mid_channels, 1, kernel_size=1, stride=1, padding=0),
@@ -325,7 +301,9 @@ class AITVitMatteDetailCaptureModule(nn.Module):
         detail_features = self.convstream(pixel_values)
         for i in range(len(self.fusion_blocks)):
             detailed_feature_map_name = len(self.fusion_blocks) - i - 1
-            features = self.fusion_blocks[i](features, detail_features[detailed_feature_map_name])
+            features = self.fusion_blocks[i](
+                features, detail_features[detailed_feature_map_name]
+            )
 
         alphas = self.sig(self.matting_head(features))
 
